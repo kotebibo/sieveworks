@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sieveworks/merkle": "workspace:*",
     "@sieveworks/protocol": "workspace:*",
+    "@sieveworks/wasm-runtime": "workspace:*",
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

@@ -73,9 +73,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@sieveworks/merkle':
+        specifier: workspace:*
+        version: link:../../packages/merkle
       '@sieveworks/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@sieveworks/wasm-runtime':
+        specifier: workspace:*
+        version: link:../../packages/wasm-runtime
       next:
         specifier: ^15.5.0
         version: 15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

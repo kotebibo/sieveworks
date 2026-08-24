@@ -66,6 +66,33 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     return { job, chunk_states: Object.fromEntries(states.map((r) => [r.state, r.n])) };
   });
 
+  app.get("/v1/jobs/:id/results", async (req) => {
+    const { id } = req.params as { id: string };
+    const results = await sql`
+      select r.id, r.extremum_score::text, r.witness_seed::text, r.merkle_root,
+             r.duration_ms, r.verification_state, r.submitted_at,
+             c.range_start::text, c.range_end::text, u.wallet_address
+      from results r
+      join chunks c on c.id = r.chunk_id
+      join users u on u.id = r.worker_id
+      where c.job_id = ${id}
+      order by r.submitted_at desc
+      limit 50`;
+    return { results };
+  });
+
+  app.get("/v1/stats", async () => {
+    const [row] = await sql`
+      select
+        (select count(*) from jobs where status = 'open')::int as open_jobs,
+        (select count(*) from chunks where state = 'accepted')::int as chunks_accepted,
+        (select coalesce(sum(seeds_evaluated), 0) from results
+           where verification_state = 'passed')::text as seeds_evaluated,
+        (select count(distinct worker_id) from results)::int as contributors,
+        (select count(*) from chunks where state = 'leased')::int as chunks_in_flight`;
+    return { ...row, sse_clients: events.size };
+  });
+
   // ---- lease -------------------------------------------------------------
   app.post("/v1/lease", async (req, reply) => {
     const parsed = LeaseRequest.safeParse(req.body);
