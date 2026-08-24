@@ -1,0 +1,23 @@
+{
+  "name": "@sieveworks/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "sieveworks-worker": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "worker": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@sieveworks/merkle": "workspace:*",
+    "@sieveworks/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

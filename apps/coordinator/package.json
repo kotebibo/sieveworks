@@ -10,10 +10,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/cors": "^11.0.0",
     "@sieveworks/merkle": "workspace:*",
     "@sieveworks/protocol": "workspace:*",
     "@sieveworks/wasm-runtime": "workspace:*",
     "fastify": "^5.6.0",
+    "ioredis": "^5.6.0",
+    "postgres": "^3.4.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {

@@ -1,0 +1,201 @@
+import { randomBytes } from "node:crypto";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import {
+  ChunkAssignment,
+  ResultSubmission,
+  verifyResultSignature,
+} from "@sieveworks/protocol";
+import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
+import { sql } from "./db.js";
+import { events } from "./events.js";
+import { createJob, CreateJobRequest } from "./jobs.js";
+import type { LeaseStore } from "./leases.js";
+import { env } from "./env.js";
+
+const LeaseRequest = z.object({
+  job_id: z.uuid(),
+  wallet_address: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "base58 wallet"),
+});
+
+interface Deps {
+  leases: LeaseStore;
+  verifier: SieveWorkerModule;
+}
+
+export function registerRoutes(app: FastifyInstance, deps: Deps): void {
+  // ---- admin -------------------------------------------------------------
+  app.post("/admin/jobs", async (req, reply) => {
+    if (req.headers["x-admin-token"] !== env.ADMIN_TOKEN) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const parsed = CreateJobRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    // Jobs pin the artifact this coordinator can actually verify with.
+    const result = await createJob(parsed.data, deps.verifier.specHash);
+    events.emit("job_created", { job_id: result.jobId });
+    return {
+      job_id: result.jobId,
+      worker_spec_hash: deps.verifier.specHash,
+      chunk_size: result.chunkSize.toString(),
+      chunk_count: result.chunkCount,
+    };
+  });
+
+  // ---- public reads ------------------------------------------------------
+  app.get("/v1/jobs", async () => {
+    const jobs = await sql`
+      select j.id, j.title, j.game, j.status, j.worker_spec_hash, j.version_pin,
+             j.bucket_size, j.chunk_size::text, j.price_per_chunk_lamports::text,
+             count(c.id) filter (where c.state = 'pending') as pending_chunks,
+             count(c.id) filter (where c.state = 'accepted') as accepted_chunks,
+             count(c.id) as total_chunks
+      from jobs j left join chunks c on c.job_id = j.id
+      where j.status = 'open'
+      group by j.id
+      order by j.created_at desc`;
+    return { jobs };
+  });
+
+  app.get("/v1/jobs/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [job] = await sql`select * from jobs where id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "not found" });
+    const states = await sql`
+      select state, count(*)::int as n from chunks where job_id = ${id} group by state`;
+    return { job, chunk_states: Object.fromEntries(states.map((r) => [r.state, r.n])) };
+  });
+
+  // ---- lease -------------------------------------------------------------
+  app.post("/v1/lease", async (req, reply) => {
+    const parsed = LeaseRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const { job_id, wallet_address } = parsed.data;
+
+    const [job] = await sql`
+      select id, worker_spec_hash, bucket_size, params, lease_ttl_seconds, status
+      from jobs where id = ${job_id}`;
+    if (!job || job.status !== "open") return reply.code(404).send({ error: "job not open" });
+
+    const [worker] = await sql<{ id: string }[]>`
+      insert into users (wallet_address) values (${wallet_address})
+      on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
+      returning id`;
+
+    const nonce = randomBytes(16).toString("hex");
+    const ttl = job.lease_ttl_seconds as number;
+
+    // SKIP LOCKED makes concurrent leases race-free; ascending range order
+    // keeps swarm progress visually contiguous (spec §7).
+    const [chunk] = await sql.begin(async (tx) => {
+      const [c] = await tx`
+        select id, range_start::text, range_end::text from chunks
+        where job_id = ${job_id} and state = 'pending'
+        order by range_start asc
+        limit 1
+        for update skip locked`;
+      if (!c) return [];
+      await tx`
+        update chunks set state = 'leased', leased_to = ${worker!.id}, leased_at = now(),
+          lease_expires_at = now() + make_interval(secs => ${ttl}),
+          lease_nonce = ${nonce}
+        where id = ${c.id}`;
+      return [c];
+    });
+    if (!chunk) return reply.code(404).send({ error: "no pending chunks" });
+
+    await deps.leases.set(chunk.id as string, nonce, ttl);
+
+    const assignment = ChunkAssignment.parse({
+      chunk_id: chunk.id,
+      job_id,
+      worker_spec_hash: job.worker_spec_hash,
+      range_start: chunk.range_start,
+      range_end: chunk.range_end,
+      bucket_size: job.bucket_size,
+      params: job.params,
+      lease_expires_at: new Date(Date.now() + ttl * 1000).toISOString(),
+      nonce,
+    });
+    events.emit("chunk_leased", { chunk_id: chunk.id, job_id, wallet: wallet_address });
+    return assignment;
+  });
+
+  // ---- result submission -------------------------------------------------
+  app.post("/v1/results", async (req, reply) => {
+    const parsed = ResultSubmission.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const sub = parsed.data;
+
+    const [row] = await sql`
+      select c.id as chunk_id, c.state, c.lease_nonce, c.lease_expires_at, c.leased_to,
+             c.range_start::text, c.range_end::text,
+             j.id as job_id, j.worker_spec_hash, u.wallet_address
+      from chunks c
+      join jobs j on j.id = c.job_id
+      left join users u on u.id = c.leased_to
+      where c.id = ${sub.chunk_id}`;
+    if (!row) return reply.code(404).send({ error: "unknown chunk" });
+
+    // Spec §8 step 1 — protocol-validity rejections. No detail beyond the
+    // category reaches the worker (rejection reasons are coordinator-only).
+    if (row.state !== "leased") return reply.code(409).send({ error: "chunk not leased" });
+    if (new Date(row.lease_expires_at) <= new Date())
+      return reply.code(409).send({ error: "lease expired" });
+    if (row.worker_spec_hash !== sub.worker_spec_hash)
+      return reply.code(422).send({ error: "rejected" });
+    if (row.lease_nonce !== sub.nonce) return reply.code(422).send({ error: "rejected" });
+    if (!verifyResultSignature(sub, row.wallet_address))
+      return reply.code(422).send({ error: "rejected" });
+
+    const [result] = await sql<{ id: string }[]>`
+      insert into results (chunk_id, worker_id, extremum_score, witness_seed, merkle_root,
+                           buckets_count, seeds_evaluated, duration_ms, signature,
+                           verification_state)
+      values (${sub.chunk_id}, ${row.leased_to}, ${sub.extremum_score}, ${sub.witness_seed},
+              ${sub.merkle_root}, ${sub.buckets_count}, ${sub.seeds_evaluated},
+              ${sub.duration_ms}, ${sub.signature}, 'pending')
+      returning id`;
+    await sql`update chunks set state = 'submitted' where id = ${sub.chunk_id}`;
+    events.emit("chunk_submitted", { chunk_id: sub.chunk_id, job_id: row.job_id });
+
+    // Verification pipeline slot. Day 2 stub: accept everything, record
+    // merkle_root and witness untouched. Day 3 replaces runVerification.
+    const verdict = await runVerification(result!.id, sub);
+    if (verdict.accepted) {
+      await sql`update results set verification_state = 'passed', verified_at = now()
+                where id = ${result!.id}`;
+      await sql`update chunks set state = 'accepted' where id = ${sub.chunk_id}`;
+      await deps.leases.clear(sub.chunk_id);
+      events.emit("chunk_accepted", {
+        chunk_id: sub.chunk_id,
+        job_id: row.job_id,
+        extremum_score: sub.extremum_score,
+        witness_seed: sub.witness_seed,
+      });
+    }
+    return { result_id: result!.id, accepted: verdict.accepted };
+  });
+
+  // ---- SSE ---------------------------------------------------------------
+  app.get("/v1/events", (req, reply) => {
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "access-control-allow-origin": "*",
+    });
+    reply.raw.write(`event: hello\ndata: {"service":"sieveworks-coordinator"}\n\n`);
+    events.add(reply.raw);
+  });
+}
+
+interface Verdict {
+  accepted: boolean;
+}
+
+// Day 3 replaces this with: witness check → honeypot check → challenge
+// sampling → accept/reject+slash. Until then every submission passes.
+async function runVerification(_resultId: string, _sub: ResultSubmission): Promise<Verdict> {
+  return { accepted: true };
+}
