@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`root + proofs > root is stable — fixed vector guards the encoding forever 1`] = `"4c879305afbecb0640deb3aaad94612cca4ddf5216e78f9dbb98e517315365cc"`;

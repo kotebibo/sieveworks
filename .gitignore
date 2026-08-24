@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+target/
+.anchor/
+test-ledger/
+packages/worker-core/out/

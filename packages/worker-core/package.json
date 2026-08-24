@@ -1,0 +1,15 @@
+{
+  "name": "@sieveworks/worker-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:native": "node build.mjs native",
+    "build:wasm": "node build.mjs wasm",
+    "test": "node test/determinism.mjs"
+  },
+  "devDependencies": {
+    "@sieveworks/wasm-runtime": "workspace:*"
+  }
+}
