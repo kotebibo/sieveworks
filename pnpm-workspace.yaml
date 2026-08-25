@@ -2,5 +2,12 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  '@stellar/stellar-sdk': false
+  blake-hash: false
+  bufferutil: false
   esbuild: true
+  protobufjs: false
   sharp: true
+  tiny-secp256k1: false
+  usb: false
+  utf-8-validate: false

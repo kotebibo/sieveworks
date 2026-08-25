@@ -19,6 +19,7 @@ import { judgeChallengeResponse, verifySubmission } from "./verification.js";
 const LeaseRequest = z.object({
   job_id: z.uuid(),
   wallet_address: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "base58 wallet"),
+  payout_address: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional(),
 });
 
 interface Deps {
@@ -86,6 +87,53 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     return { results };
   });
 
+  app.get("/v1/finds", async () => {
+    const finds = await sql`
+      select f.id, f.seed::text, f.score::text, f.is_record, f.tx_signature, f.created_at,
+             j.title as job_title, j.id as job_id, u.wallet_address
+      from finds f
+      join jobs j on j.id = f.job_id
+      join users u on u.id = f.worker_id
+      order by f.created_at desc
+      limit 100`;
+    return { finds };
+  });
+
+  app.get("/v1/leaderboard", async () => {
+    const leaders = await sql`
+      select u.wallet_address,
+             count(r.id) filter (where r.verification_state = 'passed')::int as chunks,
+             count(f.id)::int as finds,
+             coalesce(sum(e.cumulative_lamports), 0)::text as earned_lamports
+      from users u
+      left join results r on r.worker_id = u.id
+      left join finds f on f.worker_id = u.id
+      left join earnings e on e.worker_id = u.id
+      where u.wallet_address not in ('coordinator-admin')
+      group by u.id
+      having count(r.id) filter (where r.verification_state = 'passed') > 0
+      order by chunks desc
+      limit 50`;
+    return { leaders };
+  });
+
+  app.get("/v1/workers/:wallet", async (req, reply) => {
+    const { wallet } = req.params as { wallet: string };
+    const [u] = await sql`select id, wallet_address, created_at from users where wallet_address = ${wallet}`;
+    if (!u) return reply.code(404).send({ error: "not found" });
+    const [agg] = await sql`
+      select count(r.id) filter (where r.verification_state = 'passed')::int as chunks,
+             count(r.id) filter (where r.verification_state = 'failed')::int as rejected,
+             coalesce(sum(r.seeds_evaluated) filter (where r.verification_state = 'passed'), 0)::text as seeds,
+             (select count(*) from finds where worker_id = ${u.id})::int as finds,
+             (select coalesce(sum(cumulative_lamports),0) from earnings where worker_id = ${u.id})::text as earned
+      from results r where r.worker_id = ${u.id}`;
+    const recentFinds = await sql`
+      select seed::text, score::text, is_record, job_id, created_at
+      from finds where worker_id = ${u.id} order by created_at desc limit 20`;
+    return { worker: u, stats: agg, finds: recentFinds };
+  });
+
   app.get("/v1/stats", async () => {
     const [row] = await sql`
       select
@@ -102,7 +150,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   app.post("/v1/lease", async (req, reply) => {
     const parsed = LeaseRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
-    const { job_id, wallet_address } = parsed.data;
+    const { job_id, wallet_address, payout_address } = parsed.data;
 
     const [job] = await sql`
       select id, worker_spec_hash, bucket_size, params, lease_ttl_seconds, status
@@ -110,8 +158,9 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (!job || job.status !== "open") return reply.code(404).send({ error: "job not open" });
 
     const [worker] = await sql<{ id: string }[]>`
-      insert into users (wallet_address) values (${wallet_address})
-      on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
+      insert into users (wallet_address, payout_address) values (${wallet_address}, ${payout_address ?? null})
+      on conflict (wallet_address) do update set
+        payout_address = coalesce(${payout_address ?? null}, users.payout_address)
       returning id`;
 
     const nonce = randomBytes(16).toString("hex");

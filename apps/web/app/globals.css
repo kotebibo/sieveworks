@@ -1,24 +1,101 @@
 @import "tailwindcss";
 
-/* Design direction (spec §12): distributed-computing console. Monospace with
- * tabular figures for EVERY number — this single rule carries the identity.
- * One accent; green/red strictly reserved for verified/rejected. */
-:root {
-  --background: #0b0d0e;
-  --foreground: #d6dbd9;
-  --muted: #6b7472;
-  --accent: #e8a13d; /* single amber accent */
-  --verified: #3dd68c; /* reserved: verified */
-  --rejected: #f2555a; /* reserved: rejected */
-  --border: #1e2422;
+/* Sieveworks — a distributed-computing console (spec §12).
+ * Cyan telemetry accent. Green/red reserved strictly for verified/rejected.
+ * Mono tabular figures for every number. Motion only on data change.
+ * Full light + dark; dark is default, .light overrides. Zero CLS. */
+
+:root,
+.dark {
+  color-scheme: dark;
+  --bg: #080c0f;
+  --panel: #0d1317;
+  --panel-2: #111a1f;
+  --border: #1b2830;
+  --text: #cfe0e6;
+  --text-dim: #7f95a0;
+  --text-faint: #4c5e68;
+  --accent: #3ec6e0;
+  --accent-dim: #1f6b7c;
+  --accent-ghost: #0e2a33;
+  --verified: #46d68a;
+  --rejected: #ff5f68;
+  --grid: #0f181d;
+}
+
+.light {
+  color-scheme: light;
+  --bg: #f6f9fa;
+  --panel: #ffffff;
+  --panel-2: #eef3f5;
+  --border: #d6e0e5;
+  --text: #0e1519;
+  --text-dim: #566670;
+  --text-faint: #8ea1ab;
+  --accent: #0e8fb0;
+  --accent-dim: #7fc9db;
+  --accent-ghost: #dcf0f5;
+  --verified: #0f9d58;
+  --rejected: #d21f2b;
+  --grid: #e7eef1;
+}
+
+* {
+  border-color: var(--border);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: "tnum" 1, "ss01" 1;
 }
 
+/* Every number in the app: monospace, tabular, so digits never shift width. */
 .num {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
+  font-family: var(--font-mono), ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+/* Data-change flash: a new/updated value pulses the accent once and settles.
+ * This is the ONLY motion in the app. */
+@keyframes settle {
+  0% { background-color: var(--accent-ghost); }
+  100% { background-color: transparent; }
+}
+.flash {
+  animation: settle 900ms ease-out;
+}
+@keyframes settle-good {
+  0% { background-color: color-mix(in srgb, var(--verified) 22%, transparent); }
+  100% { background-color: transparent; }
+}
+.flash-good {
+  animation: settle-good 900ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flash, .flash-good { animation: none; }
+}
+
+/* Skeleton loaders match final layout — never a centered spinner (spec §12). */
+@keyframes skeleton {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+  100% { opacity: 0.4; }
+}
+.skeleton {
+  background: var(--panel-2);
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
 }

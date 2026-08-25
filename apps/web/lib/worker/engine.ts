@@ -72,9 +72,12 @@ export class ContributeEngine {
     this.emit({ log: [`${new Date().toISOString().slice(11, 19)} ${text}`, ...this.stats.log].slice(0, 30) });
   }
 
-  async start(jobId: string, threads: number): Promise<void> {
+  private payoutAddress: string | undefined;
+
+  async start(jobId: string, threads: number, payoutAddress?: string): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.payoutAddress = payoutAddress;
     this.seed = loadOrCreateSeed();
     this.wallet = walletFromSecretKey(this.seed);
     this.emit({ status: "starting", wallet: this.wallet, threads });
@@ -114,7 +117,7 @@ export class ContributeEngine {
     const leaseRes = await fetch(`${COORDINATOR_URL}/v1/lease`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ job_id: jobId, wallet_address: this.wallet }),
+      body: JSON.stringify({ job_id: jobId, wallet_address: this.wallet, payout_address: this.payoutAddress }),
     });
     if (leaseRes.status === 404) {
       this.logLine("job drained — no pending chunks");
