@@ -1,101 +1,122 @@
 @import "tailwindcss";
 
-/* Sieveworks — a distributed-computing console (spec §12).
- * Cyan telemetry accent. Green/red reserved strictly for verified/rejected.
- * Mono tabular figures for every number. Motion only on data change.
- * Full light + dark; dark is default, .light overrides. Zero CLS. */
+/* Sieveworks — a ground-station telemetry console.
+ * Dense, gridded, monospace data. Cyan accent; green/red reserved for
+ * verified/rejected. Motion only on data change. Full light + dark. */
 
 :root,
 .dark {
   color-scheme: dark;
-  --bg: #080c0f;
-  --panel: #0d1317;
-  --panel-2: #111a1f;
-  --border: #1b2830;
-  --text: #cfe0e6;
-  --text-dim: #7f95a0;
-  --text-faint: #4c5e68;
-  --accent: #3ec6e0;
-  --accent-dim: #1f6b7c;
-  --accent-ghost: #0e2a33;
-  --verified: #46d68a;
-  --rejected: #ff5f68;
-  --grid: #0f181d;
+  --bg: #05080a;
+  --bg-2: #070b0e;
+  --panel: #0a1014;
+  --panel-2: #0f171c;
+  --border: #16242c;
+  --border-bright: #243a45;
+  --text: #d3e3e9;
+  --text-dim: #74909c;
+  --text-faint: #3f545e;
+  --accent: #35d0ee;
+  --accent-2: #17a5c4;
+  --accent-dim: #12525f;
+  --accent-ghost: #082b34;
+  --verified: #3ee089;
+  --rejected: #ff5964;
+  --amber: #f5b544;
+  --grid: #0b141a;
+  --scan: rgba(53, 208, 238, 0.03);
+  --cell-empty: #182932;
 }
 
 .light {
   color-scheme: light;
-  --bg: #f6f9fa;
+  --bg: #eef3f5;
+  --bg-2: #e6edf0;
   --panel: #ffffff;
-  --panel-2: #eef3f5;
-  --border: #d6e0e5;
-  --text: #0e1519;
-  --text-dim: #566670;
-  --text-faint: #8ea1ab;
-  --accent: #0e8fb0;
-  --accent-dim: #7fc9db;
-  --accent-ghost: #dcf0f5;
-  --verified: #0f9d58;
-  --rejected: #d21f2b;
-  --grid: #e7eef1;
+  --panel-2: #f3f7f9;
+  --border: #cddae1;
+  --border-bright: #a9c2cd;
+  --text: #08151a;
+  --text-dim: #4a5f6a;
+  --text-faint: #90a6b0;
+  --accent: #0894b4;
+  --accent-2: #0a7f9a;
+  --accent-dim: #7fcede;
+  --accent-ghost: #d3eef5;
+  --verified: #0a9d54;
+  --rejected: #d61f2b;
+  --amber: #b7791f;
+  --grid: #dde7eb;
+  --scan: rgba(8, 148, 180, 0.025);
+  --cell-empty: #cbdae1;
 }
 
-* {
-  border-color: var(--border);
-}
+* { border-color: var(--border); }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-feature-settings: "tnum" 1, "ss01" 1;
-}
-
-/* Every number in the app: monospace, tabular, so digits never shift width. */
-.num {
-  font-family: var(--font-mono), ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-}
-
-/* Data-change flash: a new/updated value pulses the accent once and settles.
- * This is the ONLY motion in the app. */
-@keyframes settle {
-  0% { background-color: var(--accent-ghost); }
-  100% { background-color: transparent; }
-}
-.flash {
-  animation: settle 900ms ease-out;
-}
-@keyframes settle-good {
-  0% { background-color: color-mix(in srgb, var(--verified) 22%, transparent); }
-  100% { background-color: transparent; }
-}
-.flash-good {
-  animation: settle-good 900ms ease-out;
-}
-@media (prefers-reduced-motion: reduce) {
-  .flash, .flash-good { animation: none; }
-}
-
-/* Skeleton loaders match final layout — never a centered spinner (spec §12). */
-@keyframes skeleton {
-  0% { opacity: 0.4; }
-  50% { opacity: 0.7; }
-  100% { opacity: 0.4; }
-}
-.skeleton {
-  background: var(--panel-2);
-  animation: skeleton 1.4s ease-in-out infinite;
-}
-
-.grid-bg {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "tnum" 1;
+  /* faint dot-grid + horizontal scanlines = ground-station atmosphere */
   background-image:
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 32px 32px;
+    radial-gradient(var(--grid) 1px, transparent 1px),
+    repeating-linear-gradient(0deg, var(--scan) 0px, var(--scan) 1px, transparent 1px, transparent 3px);
+  background-size: 22px 22px, 100% 3px;
 }
+
+.font-display { font-family: var(--font-display), var(--font-mono), monospace; }
+.num {
+  font-family: var(--font-mono), ui-monospace, "JetBrains Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ---- panel chrome ---- */
+.panel {
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.panel-bright { border-color: var(--border-bright); }
+/* corner ticks — the mission-control detail */
+.ticked::before,
+.ticked::after {
+  content: "";
+  position: absolute;
+  width: 7px; height: 7px;
+  border-color: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.ticked::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+.ticked::after { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+
+.barlabel {
+  font-family: var(--font-display), monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ---- data-change motion (the only motion) ---- */
+@keyframes settle { 0% { background-color: var(--accent-ghost); } 100% { background-color: transparent; } }
+.flash { animation: settle 900ms ease-out; }
+@keyframes settle-good { 0% { background-color: color-mix(in srgb, var(--verified) 24%, transparent); } 100% { background-color: transparent; } }
+.flash-good { animation: settle-good 900ms ease-out; }
+@keyframes cell-pop {
+  0% { transform: scale(0.4); background-color: var(--accent); }
+  100% { transform: scale(1); }
+}
+.cell-pop { animation: cell-pop 500ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .flash, .flash-good, .cell-pop { animation: none; } }
+
+@keyframes skeleton { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
+.skeleton { background: var(--panel-2); animation: skeleton 1.4s ease-in-out infinite; }
+
+/* thin custom scrollbar for data panels */
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--border-bright); }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }

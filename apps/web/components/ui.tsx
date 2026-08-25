@@ -131,7 +131,7 @@ export function Button({
   disabled?: boolean;
   title?: string;
 }) {
-  const base = "inline-flex items-center gap-2 px-4 py-2 text-sm border transition-colors disabled:opacity-40";
+  const base = "font-display tracking-wide inline-flex items-center gap-2 px-4 py-2 text-[13px] border transition-colors disabled:opacity-40";
   const styles =
     variant === "primary"
       ? "border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"

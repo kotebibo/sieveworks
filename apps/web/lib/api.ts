@@ -72,6 +72,8 @@ export interface Leader {
   earned_lamports: string;
 }
 
+export const fetchSwarm = () => get<{ job_id: string | null; title: string | null; cells: string }>("/v1/swarm");
+export const fetchJobSwarm = (id: string) => get<{ cells: string }>(`/v1/jobs/${id}/swarm`);
 export const fetchStats = () => get<GlobalStats>("/v1/stats");
 export const fetchJobs = () => get<{ jobs: JobSummary[] }>("/v1/jobs");
 export const fetchJob = (id: string) => get<JobDetail>(`/v1/jobs/${id}`);

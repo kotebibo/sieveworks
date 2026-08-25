@@ -87,6 +87,39 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     return { results };
   });
 
+  // Downsampled per-chunk state for the swarm grid, ordered by range so the
+  // grid fills contiguously. One char per chunk: a/p/l/s/v/r/q.
+  app.get("/v1/jobs/:id/swarm", async (req) => {
+    const { id } = req.params as { id: string };
+    const rows = await sql<{ state: string }[]>`
+      select state from chunks where job_id = ${id} order by range_start asc limit 2000`;
+    const code: Record<string, string> = {
+      accepted: "a", pending: "p", leased: "l", submitted: "s",
+      verifying: "v", challenged: "v", rejected: "r", quarantined: "q",
+    };
+    return { cells: rows.map((r) => code[r.state] ?? "p").join("") };
+  });
+
+  // The single most active open job — powers the landing hero swarm.
+  app.get("/v1/swarm", async () => {
+    const [job] = await sql<{ id: string; title: string }[]>`
+      select j.id, j.title from jobs j
+      join chunks c on c.job_id = j.id
+      where j.status = 'open'
+      group by j.id
+      order by count(c.id) filter (where c.state in ('leased','submitted','verifying')) desc,
+               count(c.id) filter (where c.state = 'accepted') desc
+      limit 1`;
+    if (!job) return { job_id: null, title: null, cells: "" };
+    const rows = await sql<{ state: string }[]>`
+      select state from chunks where job_id = ${job.id} order by range_start asc limit 2000`;
+    const code: Record<string, string> = {
+      accepted: "a", pending: "p", leased: "l", submitted: "s",
+      verifying: "v", challenged: "v", rejected: "r", quarantined: "q",
+    };
+    return { job_id: job.id, title: job.title, cells: rows.map((r) => code[r.state] ?? "p").join("") };
+  });
+
   app.get("/v1/finds", async () => {
     const finds = await sql`
       select f.id, f.seed::text, f.score::text, f.is_record, f.tx_signature, f.created_at,

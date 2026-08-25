@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import { Chakra_Petch, IBM_Plex_Mono, Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
@@ -11,6 +11,13 @@ const mono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-mono",
+  display: "swap",
+});
+// Display face — an angular technical HUD font; carries the console identity.
+const display = Chakra_Petch({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-display",
   display: "swap",
 });
 
@@ -33,26 +40,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className={`${sans.variable} ${mono.variable} min-h-screen antialiased`}>
+      <body className={`${sans.variable} ${mono.variable} ${display.variable} min-h-screen antialiased`}>
         <ThemeProvider>
           <WalletContext>
-            <header className="border-b border-[var(--border)] px-4 py-2 flex items-center gap-6 sticky top-0 bg-[var(--bg)] z-20">
-              <Link href="/" className="font-semibold tracking-tight">
-                sieveworks
-              </Link>
-              <nav className="flex gap-4 text-sm text-[var(--text-dim)]">
-                {NAV.map(([href, label]) => (
-                  <Link key={href} href={href} className="hover:text-[var(--text)]">
-                    {label}
-                  </Link>
-                ))}
-              </nav>
-              <div className="ml-auto flex items-center gap-2">
-                <ThemeToggle />
-                <WalletButton />
+            <header className="border-b border-[var(--border)] sticky top-0 bg-[var(--bg)] z-20">
+              <div className="flex items-center gap-6 px-4 h-11">
+                <Link href="/" className="font-display font-bold tracking-tight text-[15px] flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 bg-[var(--accent)]" style={{ boxShadow: "0 0 8px var(--accent)" }} />
+                  SIEVEWORKS
+                </Link>
+                <nav className="hidden sm:flex gap-5 text-[13px] text-[var(--text-dim)] font-display tracking-wide">
+                  {NAV.map(([href, label]) => (
+                    <Link key={href} href={href} className="hover:text-[var(--accent)] uppercase">
+                      {label}
+                    </Link>
+                  ))}
+                </nav>
+                <div className="ml-auto flex items-center gap-2">
+                  <ThemeToggle />
+                  <WalletButton />
+                </div>
               </div>
             </header>
-            <main className="px-4 py-6">{children}</main>
+            <main className="px-3 sm:px-4 py-4">{children}</main>
           </WalletContext>
         </ThemeProvider>
       </body>

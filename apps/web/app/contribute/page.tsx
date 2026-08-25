@@ -35,14 +35,14 @@ export default function Contribute() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-lg font-semibold">Contribute</h1>
+      <h1 className="font-display text-xl font-bold tracking-tight">CONTRIBUTE</h1>
       <p className="mt-1 text-sm text-[var(--text-dim)] max-w-2xl">
         Your browser evaluates seeds in sandboxed WebAssembly. Nothing is installed, no signup. A
         local worker key is created for you automatically — connect a wallet only when you want
         earnings paid to an address you control.
       </p>
 
-      <div className="mt-5 panel p-4">
+      <div className="mt-5 panel ticked p-4">
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-xs text-[var(--text-dim)]">
             job
