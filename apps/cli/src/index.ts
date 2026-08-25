@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 import {
   type BucketLeaf,
   hashLeaf,
+  merkleProof,
   merkleRoot,
   toHex,
 } from "@sieveworks/merkle";
 import {
   ChunkAssignment,
   signResult,
+  SubmissionResponse,
   walletFromSecretKey,
   type UnsignedResult,
 } from "@sieveworks/protocol";
@@ -137,15 +139,43 @@ while (completed < maxChunks) {
   };
   const submission = { ...unsigned, signature: signResult(unsigned, secretKey) };
 
-  const res = await api<{ accepted?: boolean; error?: unknown }>("/v1/results", submission);
+  const res = await api<unknown>("/v1/results", submission);
   if (res.status !== 200) {
     console.error(`submit failed (${res.status}):`, res.data);
     process.exit(1);
   }
-  completed++;
+  let verdict = SubmissionResponse.parse(res.data);
+
+  // Answer a challenge from retained bucket data: open exactly the demanded
+  // leaves with inclusion proofs. This is why leaves are kept in memory.
+  if (verdict.status === "challenged" && verdict.challenge) {
+    const hashes = leaves.map(hashLeaf);
+    const challengeResponse = {
+      result_id: verdict.result_id,
+      leaves: verdict.challenge.bucket_indices.map((i) => ({
+        index: i,
+        max_score: leaves[i]!.maxScore.toString(),
+        max_seed: leaves[i]!.maxSeed.toString(),
+      })),
+      proofs: verdict.challenge.bucket_indices.map((i) => merkleProof(hashes, i).map(toHex)),
+    };
+    const judged = await api<{ status: string }>("/v1/challenge-response", challengeResponse);
+    if (judged.status !== 200) {
+      console.error(`challenge response failed (${judged.status}):`, judged.data);
+      process.exit(1);
+    }
+    verdict = { result_id: verdict.result_id, status: judged.data.status as "accepted" | "rejected" };
+    console.log(`  challenged on buckets [${challengeResponse.leaves.map((l) => l.index).join(",")}] → ${verdict.status}`);
+  }
+
+  if (verdict.status === "accepted") completed++;
   const rate = Math.round(Number(seedsEvaluated) / (durationMs / 1000));
   console.log(
     `chunk ${assignment.chunk_id.slice(0, 8)} [${assignment.range_start},${assignment.range_end}) ` +
-      `score=${best.maxScore} seed=${best.maxSeed} ${rate} seeds/s accepted=${res.data.accepted}`
+      `score=${best.maxScore} seed=${best.maxSeed} ${rate} seeds/s ${verdict.status}`
   );
+  if (verdict.status === "rejected") {
+    console.error("submission rejected — halting (honest workers should never see this)");
+    process.exit(1);
+  }
 }

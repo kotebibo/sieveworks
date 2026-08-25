@@ -2,16 +2,19 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
+  ChallengeResponse,
   ChunkAssignment,
   ResultSubmission,
   verifyResultSignature,
 } from "@sieveworks/protocol";
 import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
+import type { BucketPool } from "./bucketPool.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import { createJob, CreateJobRequest } from "./jobs.js";
 import type { LeaseStore } from "./leases.js";
 import { env } from "./env.js";
+import { judgeChallengeResponse, verifySubmission } from "./verification.js";
 
 const LeaseRequest = z.object({
   job_id: z.uuid(),
@@ -21,6 +24,7 @@ const LeaseRequest = z.object({
 interface Deps {
   leases: LeaseStore;
   verifier: SieveWorkerModule;
+  bucketPool: BucketPool;
 }
 
 export function registerRoutes(app: FastifyInstance, deps: Deps): void {
@@ -32,13 +36,14 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const parsed = CreateJobRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
     // Jobs pin the artifact this coordinator can actually verify with.
-    const result = await createJob(parsed.data, deps.verifier.specHash);
+    const result = await createJob(parsed.data, deps.verifier.specHash, deps.verifier);
     events.emit("job_created", { job_id: result.jobId });
     return {
       job_id: result.jobId,
       worker_spec_hash: deps.verifier.specHash,
       chunk_size: result.chunkSize.toString(),
       chunk_count: result.chunkCount,
+      honeypots: result.honeypots,
     };
   });
 
@@ -157,7 +162,9 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const [row] = await sql`
       select c.id as chunk_id, c.state, c.lease_nonce, c.lease_expires_at, c.leased_to,
              c.range_start::text, c.range_end::text,
-             j.id as job_id, j.worker_spec_hash, u.wallet_address
+             j.id as job_id, j.worker_spec_hash, j.bucket_size, j.params,
+             j.price_per_chunk_lamports::text, j.current_record_score,
+             u.wallet_address
       from chunks c
       join jobs j on j.id = c.job_id
       left join users u on u.id = c.leased_to
@@ -186,22 +193,81 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     await sql`update chunks set state = 'submitted' where id = ${sub.chunk_id}`;
     events.emit("chunk_submitted", { chunk_id: sub.chunk_id, job_id: row.job_id });
 
-    // Verification pipeline slot. Day 2 stub: accept everything, record
-    // merkle_root and witness untouched. Day 3 replaces runVerification.
-    const verdict = await runVerification(result!.id, sub);
-    if (verdict.accepted) {
-      await sql`update results set verification_state = 'passed', verified_at = now()
-                where id = ${result!.id}`;
-      await sql`update chunks set state = 'accepted' where id = ${sub.chunk_id}`;
-      await deps.leases.clear(sub.chunk_id);
-      events.emit("chunk_accepted", {
-        chunk_id: sub.chunk_id,
-        job_id: row.job_id,
-        extremum_score: sub.extremum_score,
-        witness_seed: sub.witness_seed,
-      });
+    // The verification pipeline (spec §8): witness → honeypot → challenge.
+    return verifySubmission(deps, result!.id, sub, {
+      chunkId: sub.chunk_id,
+      jobId: row.job_id,
+      workerId: row.leased_to,
+      rangeStart: BigInt(row.range_start),
+      rangeEnd: BigInt(row.range_end),
+      bucketSize: row.bucket_size,
+      params: row.params,
+      pricePerChunk: row.price_per_chunk_lamports,
+      currentRecordScore: row.current_record_score === null ? null : BigInt(row.current_record_score),
+    });
+  });
+
+  // ---- challenge response ------------------------------------------------
+  app.post("/v1/challenge-response", async (req, reply) => {
+    const parsed = ChallengeResponse.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    try {
+      const status = await judgeChallengeResponse(deps, parsed.data);
+      return { result_id: parsed.data.result_id, status };
+    } catch (err) {
+      const code = (err as { code?: number }).code === 404 ? 404 : 500;
+      return reply.code(code).send({ error: code === 404 ? "no open challenge" : "internal" });
     }
-    return { result_id: result!.id, accepted: verdict.accepted };
+  });
+
+  // ---- audit -------------------------------------------------------------
+  // Everything a third party needs to independently re-verify a decision
+  // (spec §8) — the honest answer to "your coordinator is centralized."
+  // Honeypot coordinates stay redacted while the job is open; a mapped
+  // honeypot is a dead honeypot. They unredact when the job closes.
+  app.get("/v1/audit/results/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [r] = await sql`
+      select r.*, r.extremum_score::text, r.witness_seed::text, r.seeds_evaluated::text,
+             c.range_start::text, c.range_end::text, c.job_id,
+             j.worker_spec_hash, j.version_pin, j.params, j.bucket_size, j.status as job_status,
+             u.wallet_address
+      from results r
+      join chunks c on c.id = r.chunk_id
+      join jobs j on j.id = c.job_id
+      join users u on u.id = r.worker_id
+      where r.id = ${id}`;
+    if (!r) return reply.code(404).send({ error: "not found" });
+    const challenges = await sql`
+      select bucket_indices, response, passed, issued_at, responded_at
+      from challenges where result_id = ${id} order by issued_at`;
+    const [rejection] = await sql`
+      select reason, detail, created_at from result_rejections where result_id = ${id}`;
+    const jobOpen = r.job_status === "open";
+    const redactedRejection =
+      rejection && jobOpen && rejection.reason === "honeypot_failed"
+        ? { ...rejection, detail: { redacted: "honeypot coordinates hidden until job closes" } }
+        : rejection;
+    return {
+      result: r,
+      challenges,
+      rejection: redactedRejection ?? null,
+      how_to_reverify: {
+        witness: "evaluate_seed(witness_seed, params) with the wasm whose sha256 = worker_spec_hash; must equal extremum_score",
+        challenge: "verify each leaf's inclusion proof against merkle_root, then evaluate_range over that bucket and compare",
+        artifact: "GET /artifact/sieve_core.wasm (hash-check it yourself)",
+      },
+    };
+  });
+
+  // The exact artifact, so third parties can re-verify decisions themselves.
+  app.get("/artifact/sieve_core.wasm", async (_req, reply) => {
+    const { readFile } = await import("node:fs/promises");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const p = join(dirname(fileURLToPath(import.meta.url)), "..", "artifacts", "sieve_core.wasm");
+    reply.header("content-type", "application/wasm");
+    return reply.send(await readFile(p));
   });
 
   // ---- SSE ---------------------------------------------------------------
@@ -217,12 +283,3 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   });
 }
 
-interface Verdict {
-  accepted: boolean;
-}
-
-// Day 3 replaces this with: witness check → honeypot check → challenge
-// sampling → accept/reject+slash. Until then every submission passes.
-async function runVerification(_resultId: string, _sub: ResultSubmission): Promise<Verdict> {
-  return { accepted: true };
-}

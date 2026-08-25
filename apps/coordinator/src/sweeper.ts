@@ -1,14 +1,18 @@
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
+import { expireChallenges, type VerifyDeps } from "./verification.js";
 
 /**
  * Lease reclaim. Postgres lease_expires_at is the truth (spec §7): expired
  * leases return to pending with attempts+1; a chunk that keeps dying
  * (attempts > 5) is quarantined — it usually crashes the worker.
  */
-export function startSweeper(leases: LeaseStore, intervalMs = 10_000): NodeJS.Timeout {
+export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Timeout {
+  const leases = deps.leases;
   const tick = async (): Promise<void> => {
+    const expired = await expireChallenges(deps);
+    if (expired > 0) console.log(`sweeper: expired ${expired} unanswered challenge(s)`);
     const quarantined = await sql<{ id: string; job_id: string }[]>`
       update chunks set state = 'quarantined', leased_to = null, lease_nonce = null
       where state = 'leased' and lease_expires_at < now() and attempts >= 5

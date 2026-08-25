@@ -1,9 +1,10 @@
 "use client";
 
-import { type BucketLeaf, hashLeaf, merkleRoot, toHex } from "@sieveworks/merkle";
+import { type BucketLeaf, hashLeaf, merkleProof, merkleRoot, toHex } from "@sieveworks/merkle";
 import {
   ChunkAssignment,
   signResult,
+  SubmissionResponse,
   walletFromSecretKey,
   type UnsignedResult,
 } from "@sieveworks/protocol";
@@ -201,8 +202,40 @@ export class ContributeEngine {
       body: JSON.stringify(submission),
     });
     if (!submitRes.ok) throw new Error(`submit → ${submitRes.status}`);
-    this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
-    this.logLine(`chunk accepted · score ${best.maxScore} · seed ${best.maxSeed}`);
+    let verdict = SubmissionResponse.parse(await submitRes.json());
+
+    // Audited: open the challenged leaves with inclusion proofs from the
+    // bucket data we retained. Signing keys are never involved here.
+    if (verdict.status === "challenged" && verdict.challenge) {
+      const hashes = allLeaves.map(hashLeaf);
+      const indices = verdict.challenge.bucket_indices;
+      this.logLine(`challenged on ${indices.length} bucket(s) — answering`);
+      const answer = {
+        result_id: verdict.result_id,
+        leaves: indices.map((i) => ({
+          index: i,
+          max_score: allLeaves[i]!.maxScore.toString(),
+          max_seed: allLeaves[i]!.maxSeed.toString(),
+        })),
+        proofs: indices.map((i) => merkleProof(hashes, i).map(toHex)),
+      };
+      const judged = await fetch(`${COORDINATOR_URL}/v1/challenge-response`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(answer),
+      });
+      if (!judged.ok) throw new Error(`challenge response → ${judged.status}`);
+      const j = (await judged.json()) as { status: "accepted" | "rejected" };
+      verdict = { result_id: verdict.result_id, status: j.status };
+    }
+
+    if (verdict.status === "accepted") {
+      this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
+      this.logLine(`chunk accepted · score ${best.maxScore} · seed ${best.maxSeed}`);
+    } else {
+      this.emit({ currentChunk: null });
+      this.logLine(`chunk rejected`);
+    }
     return true;
   }
 

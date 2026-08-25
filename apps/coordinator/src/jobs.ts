@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { u64String } from "@sieveworks/protocol";
+import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
 import { sql } from "./db.js";
 
 /**
@@ -40,10 +42,47 @@ export function deriveChunkSize(req: {
   return (buckets > 0n ? buckets : 1n) * bucket;
 }
 
+const HONEYPOT_FRACTION = 0.1; // ~10% of chunks contain a known seed
+const HONEYPOT_CAP = 200;
+
+function randomSeedIn(start: bigint, end: bigint): bigint {
+  const range = end - start;
+  const raw = BigInt("0x" + randomBytes(8).toString("hex"));
+  return start + (raw % range);
+}
+
+/** Precompute honeypots with the verifier itself (spec §2.3). Nothing is
+ * injected into assignments — these are simply seeds we already know the
+ * answer for. The table has no public read policy; secrecy IS the mechanism. */
+async function generateHoneypots(
+  verifier: SieveWorkerModule,
+  jobId: string,
+  start: bigint,
+  end: bigint,
+  chunkCount: number,
+  params: Record<string, unknown>
+): Promise<number> {
+  const count = Math.min(HONEYPOT_CAP, Math.max(1, Math.ceil(chunkCount * HONEYPOT_FRACTION)));
+  const paramsJson = JSON.stringify(params);
+  const rows: { job_id: string; seed: string; score: string }[] = [];
+  const seen = new Set<string>();
+  while (rows.length < count) {
+    const seed = randomSeedIn(start, end);
+    const key = seed.toString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const score = verifier.evaluateSeed(seed, paramsJson);
+    rows.push({ job_id: jobId, seed: key, score: score.toString() });
+  }
+  await sql`insert into honeypots ${sql(rows)} on conflict (job_id, seed) do nothing`;
+  return rows.length;
+}
+
 export async function createJob(
   req: CreateJobRequest,
-  workerSpecHash: string
-): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number }> {
+  workerSpecHash: string,
+  verifier: SieveWorkerModule
+): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number }> {
   const start = BigInt(req.search_space_start);
   const end = BigInt(req.search_space_end);
   if (end <= start) throw new Error("empty search space");
@@ -89,5 +128,7 @@ export async function createJob(
   }
   if (rows.length > 0) await sql`insert into chunks ${sql(rows)}`;
 
-  return { jobId, chunkSize, chunkCount };
+  const honeypots = await generateHoneypots(verifier, jobId, start, end, chunkCount, req.params);
+
+  return { jobId, chunkSize, chunkCount, honeypots };
 }

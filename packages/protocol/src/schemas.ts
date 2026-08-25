@@ -67,6 +67,23 @@ export const ChallengeResponse = z.object({
 });
 export type ChallengeResponse = z.infer<typeof ChallengeResponse>;
 
+/** Coordinator's answer to a submission. When status is "challenged" the
+ * worker must POST a ChallengeResponse within the challenge window or the
+ * chunk fails. Rejections carry no reason — deliberately (spec §2.3). */
+export const SubmissionResponse = z.object({
+  result_id: uuid,
+  status: z.enum(["accepted", "rejected", "challenged"]),
+  challenge: Challenge.optional(),
+});
+export type SubmissionResponse = z.infer<typeof SubmissionResponse>;
+
+/** Coordinator's verdict after judging a challenge response. */
+export const ChallengeVerdict = z.object({
+  result_id: uuid,
+  status: z.enum(["accepted", "rejected"]),
+});
+export type ChallengeVerdict = z.infer<typeof ChallengeVerdict>;
+
 /** WASM exports every conforming worker module must provide. Enforced by
  * wasm-runtime at load time. evaluate_seed is the verification primitive. */
 export const WORKER_ABI = ["evaluate_range", "evaluate_seed", "spec_version"] as const;
