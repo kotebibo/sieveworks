@@ -10,7 +10,8 @@ import {
   type RecentResult,
 } from "@/lib/api";
 import { Badge, Button, LiveNum, Mono, Progress, Skeleton, fmt } from "@/components/ui";
-import { Panel, SwarmGrid } from "@/components/console";
+import { Panel } from "@/components/console";
+import { Sieve } from "@/components/Sieve";
 
 export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -69,7 +70,7 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
 
       <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
         <Panel label="◢ swarm" right={`${fmt(done)} / ${fmt(total)}`}>
-          {cells ? <SwarmGrid cells={cells} /> : <div className="h-40 skeleton" />}
+          {cells ? <Sieve cells={cells} /> : <div className="h-40 skeleton" />}
         </Panel>
         <Panel label="◆ current record">
           {best ? (

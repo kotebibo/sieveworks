@@ -27,7 +27,7 @@ export default function Finds() {
             {f.is_record && <span className="num text-[10px] px-1.5 py-0.5 border border-[var(--accent)] text-[var(--accent)]">RECORD</span>}
             <span className="num">score <span className="text-[var(--verified)]">{f.score}</span></span>
             <span className="num text-[var(--text-dim)]">seed {f.seed}</span>
-            <Link href={`/jobs/${f.job_id}`} className="text-[var(--text-dim)] hover:text-[var(--text)]">{f.job_title}</Link>
+            <Link href={`/bounties/${f.job_id}`} className="text-[var(--text-dim)] hover:text-[var(--text)]">{f.job_title}</Link>
             <span className="num text-xs text-[var(--text-dim)] inline-flex gap-1 ml-auto">
               by <Mono value={f.wallet_address} kind="address" />
               {f.tx_signature ? <> · <Mono value={f.tx_signature} kind="tx" /></> : <span className="text-[var(--text-faint)]">· off-chain</span>}

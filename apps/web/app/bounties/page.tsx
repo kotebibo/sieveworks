@@ -18,7 +18,7 @@ export default function Jobs() {
     <div className="mx-auto max-w-5xl">
       <div className="flex items-baseline justify-between">
         <h1 className="text-lg font-semibold">Bounty board</h1>
-        <Button href="/jobs/new" variant="ghost">+ Post a bounty</Button>
+        <Button href="/bounties/new" variant="ghost">+ Post a bounty</Button>
       </div>
 
       {jobs === null && (
@@ -34,7 +34,7 @@ export default function Jobs() {
           const total = Number(j.total_chunks);
           const pct = total > 0 ? Math.round((done / total) * 100) : 0;
           return (
-            <Link key={j.id} href={`/jobs/${j.id}`} className="block panel p-4 hover:border-[var(--accent)] transition-colors">
+            <Link key={j.id} href={`/bounties/${j.id}`} className="block panel p-4 hover:border-[var(--accent)] transition-colors">
               <div className="flex items-baseline justify-between gap-4">
                 <span className="font-medium">{j.title}</span>
                 <span className="num text-xs text-[var(--text-dim)]">{j.game} · {j.version_pin}</span>
