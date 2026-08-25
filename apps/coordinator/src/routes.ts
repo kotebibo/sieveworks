@@ -7,7 +7,6 @@ import {
   ResultSubmission,
   verifyResultSignature,
 } from "@sieveworks/protocol";
-import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
 import type { BucketPool } from "./bucketPool.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
@@ -15,6 +14,8 @@ import { createJob, CreateJobRequest } from "./jobs.js";
 import type { LeaseStore } from "./leases.js";
 import { env } from "./env.js";
 import { judgeChallengeResponse, verifySubmission } from "./verification.js";
+import { registry } from "./moduleRegistry.js";
+import { runConformanceGate } from "./conformance.js";
 
 const LeaseRequest = z.object({
   job_id: z.uuid(),
@@ -24,28 +25,97 @@ const LeaseRequest = z.object({
 
 interface Deps {
   leases: LeaseStore;
-  verifier: SieveWorkerModule;
   bucketPool: BucketPool;
 }
 
 export function registerRoutes(app: FastifyInstance, deps: Deps): void {
-  // ---- admin -------------------------------------------------------------
-  app.post("/admin/jobs", async (req, reply) => {
-    if (req.headers["x-admin-token"] !== env.ADMIN_TOKEN) {
-      return reply.code(401).send({ error: "unauthorized" });
-    }
+  // ---- job creation (open: anyone can post against a registered module) ---
+  app.post("/v1/jobs", async (req, reply) => {
     const parsed = CreateJobRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
-    // Jobs pin the artifact this coordinator can actually verify with.
-    const result = await createJob(parsed.data, deps.verifier.specHash, deps.verifier);
+    const [spec] = await sql`select hash from worker_specs where hash = ${parsed.data.worker_spec_hash}`;
+    if (!spec) return reply.code(400).send({ error: "unknown worker_spec_hash — upload/register the module first" });
+    const result = await createJob(parsed.data);
     events.emit("job_created", { job_id: result.jobId });
     return {
       job_id: result.jobId,
-      worker_spec_hash: deps.verifier.specHash,
+      worker_spec_hash: parsed.data.worker_spec_hash,
       chunk_size: result.chunkSize.toString(),
       chunk_count: result.chunkCount,
       honeypots: result.honeypots,
     };
+  });
+
+  // admin alias (kept for scripts) — same handler, token-gated
+  app.post("/admin/jobs", async (req, reply) => {
+    if (req.headers["x-admin-token"] !== env.ADMIN_TOKEN) return reply.code(401).send({ error: "unauthorized" });
+    const parsed = CreateJobRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const [spec] = await sql`select hash from worker_specs where hash = ${parsed.data.worker_spec_hash}`;
+    if (!spec) return reply.code(400).send({ error: "unknown worker_spec_hash" });
+    const result = await createJob(parsed.data);
+    events.emit("job_created", { job_id: result.jobId });
+    return { job_id: result.jobId, worker_spec_hash: parsed.data.worker_spec_hash, chunk_size: result.chunkSize.toString(), chunk_count: result.chunkCount, honeypots: result.honeypots };
+  });
+
+  // ---- worker module registry --------------------------------------------
+  app.get("/v1/specs", async () => {
+    const specs = await sql`
+      select ws.hash, ws.name, ws.description, ws.spec_version, ws.conformance,
+             ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
+             ws.is_builtin, ws.created_at,
+             count(j.id) filter (where j.status = 'open')::int as open_jobs
+      from worker_specs ws
+      left join jobs j on j.worker_spec_hash = ws.hash
+      group by ws.hash
+      order by ws.is_builtin desc, ws.created_at asc`;
+    return { specs };
+  });
+
+  // Serve any registered module's artifact by hash (workers fetch their job's
+  // module; anyone can re-hash and re-verify it).
+  app.get("/v1/specs/:hash/artifact", async (req, reply) => {
+    const { hash } = req.params as { hash: string };
+    try {
+      const bytes = await registry.getBytes(hash);
+      reply.header("content-type", "application/wasm");
+      reply.header("cache-control", "public, max-age=31536000, immutable");
+      return reply.send(Buffer.from(bytes));
+    } catch {
+      return reply.code(404).send({ error: "unknown module" });
+    }
+  });
+
+  // Upload a module → run the conformance gate → register on pass. This is the
+  // self-serve platform surface: bring your own worker.
+  app.post("/v1/specs", async (req, reply) => {
+    const parts = req.parts();
+    let wasm: Buffer | null = null;
+    let name = "", description = "", exampleParams = "{}";
+    for await (const part of parts) {
+      if (part.type === "file") wasm = await part.toBuffer();
+      else if (part.fieldname === "name") name = String(part.value).slice(0, 120);
+      else if (part.fieldname === "description") description = String(part.value).slice(0, 2000);
+      else if (part.fieldname === "example_params") exampleParams = String(part.value).slice(0, 4000);
+    }
+    if (!wasm || wasm.length === 0) return reply.code(400).send({ error: "no .wasm file" });
+    if (wasm.length > 8 * 1024 * 1024) return reply.code(400).send({ error: "module too large (8MB max)" });
+    if (!name) return reply.code(400).send({ error: "name required" });
+    let params: Record<string, unknown> = {};
+    try { params = JSON.parse(exampleParams); } catch { return reply.code(400).send({ error: "example_params must be JSON" }); }
+
+    const bytes = new Uint8Array(wasm);
+    const verdict = await runConformanceGate(bytes, JSON.stringify(params));
+    if (!verdict.ok) return reply.code(422).send({ ok: false, hash: verdict.hash, reason: verdict.reason });
+
+    await sql`
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin)
+      values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
+              ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
+              ${sql.json(params as never)}, false)
+      on conflict (hash) do update set name = excluded.name, description = excluded.description`;
+    events.emit("spec_registered", { hash: verdict.hash, name });
+    return { ok: true, hash: verdict.hash, spec_version: verdict.spec_version, conformance: verdict };
   });
 
   // ---- public reads ------------------------------------------------------
@@ -280,6 +350,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       chunkId: sub.chunk_id,
       jobId: row.job_id,
       workerId: row.leased_to,
+      specHash: row.worker_spec_hash,
       rangeStart: BigInt(row.range_start),
       rangeEnd: BigInt(row.range_end),
       bucketSize: row.bucket_size,
@@ -337,19 +408,9 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       how_to_reverify: {
         witness: "evaluate_seed(witness_seed, params) with the wasm whose sha256 = worker_spec_hash; must equal extremum_score",
         challenge: "verify each leaf's inclusion proof against merkle_root, then evaluate_range over that bucket and compare",
-        artifact: "GET /artifact/sieve_core.wasm (hash-check it yourself)",
+        artifact: "GET /v1/specs/{worker_spec_hash}/artifact (hash-check it yourself)",
       },
     };
-  });
-
-  // The exact artifact, so third parties can re-verify decisions themselves.
-  app.get("/artifact/sieve_core.wasm", async (_req, reply) => {
-    const { readFile } = await import("node:fs/promises");
-    const { join, dirname } = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const p = join(dirname(fileURLToPath(import.meta.url)), "..", "artifacts", "sieve_core.wasm");
-    reply.header("content-type", "application/wasm");
-    return reply.send(await readFile(p));
   });
 
   // ---- SSE ---------------------------------------------------------------

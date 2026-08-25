@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { u64String } from "@sieveworks/protocol";
-import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
 import { sql } from "./db.js";
+import { registry } from "./moduleRegistry.js";
 
 /**
  * Chunk sizing is DERIVED, never hardcoded (Day 2 rule): target a ~30s chunk
@@ -17,9 +17,10 @@ const MAX_CHUNKS_PER_JOB = 20_000;
 export const CreateJobRequest = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
-  game: z.string().min(1).default("minecraft"),
+  game: z.string().min(1).default("compute"),
+  worker_spec_hash: z.string().regex(/^[0-9a-f]{64}$/, "sha256 hex of a registered module"),
   params: z.record(z.string(), z.unknown()),
-  version_pin: z.string().min(1),
+  version_pin: z.string().min(1).default("v1"),
   search_space_start: u64String,
   search_space_end: u64String,
   bucket_size: z.number().int().min(1).max(1_048_576).default(1024),
@@ -55,13 +56,14 @@ function randomSeedIn(start: bigint, end: bigint): bigint {
  * injected into assignments — these are simply seeds we already know the
  * answer for. The table has no public read policy; secrecy IS the mechanism. */
 async function generateHoneypots(
-  verifier: SieveWorkerModule,
+  specHash: string,
   jobId: string,
   start: bigint,
   end: bigint,
   chunkCount: number,
   params: Record<string, unknown>
 ): Promise<number> {
+  const module = await registry.get(specHash);
   const count = Math.min(HONEYPOT_CAP, Math.max(1, Math.ceil(chunkCount * HONEYPOT_FRACTION)));
   const paramsJson = JSON.stringify(params);
   const rows: { job_id: string; seed: string; score: string }[] = [];
@@ -71,7 +73,7 @@ async function generateHoneypots(
     const key = seed.toString();
     if (seen.has(key)) continue;
     seen.add(key);
-    const score = verifier.evaluateSeed(seed, paramsJson);
+    const score = module.evaluateSeed(seed, paramsJson);
     rows.push({ job_id: jobId, seed: key, score: score.toString() });
   }
   await sql`insert into honeypots ${sql(rows)} on conflict (job_id, seed) do nothing`;
@@ -79,10 +81,9 @@ async function generateHoneypots(
 }
 
 export async function createJob(
-  req: CreateJobRequest,
-  workerSpecHash: string,
-  verifier: SieveWorkerModule
+  req: CreateJobRequest
 ): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number }> {
+  const workerSpecHash = req.worker_spec_hash;
   const start = BigInt(req.search_space_start);
   const end = BigInt(req.search_space_end);
   if (end <= start) throw new Error("empty search space");
@@ -128,7 +129,7 @@ export async function createJob(
   }
   if (rows.length > 0) await sql`insert into chunks ${sql(rows)}`;
 
-  const honeypots = await generateHoneypots(verifier, jobId, start, end, chunkCount, req.params);
+  const honeypots = await generateHoneypots(workerSpecHash, jobId, start, end, chunkCount, req.params);
 
   return { jobId, chunkSize, chunkCount, honeypots };
 }

@@ -1,35 +1,29 @@
 import { parentPort } from "node:worker_threads";
-import { loadVerifier } from "./verifier.js";
+import { registry } from "./moduleRegistry.js";
 
 /**
- * Verification worker thread. Hosts its OWN hash-verified WASM instance and
- * recomputes challenged buckets (~5.5s for 8×1024 seeds) without blocking the
- * main event loop. Witness checks stay on the main thread — they're sub-ms.
+ * Verification worker thread. Recomputes challenged buckets off the main event
+ * loop, loading the RIGHT module per job by hash (multi-module). Its own
+ * module cache and DB connection. A pathological module can hang here — the
+ * main thread guards every call with a timeout and restarts this worker, so a
+ * stuck module fails the challenge instead of wedging the pipeline.
  */
 
 interface BucketJob {
   id: number;
-  rangeStart: string; // u64 decimal
+  hash: string;
+  rangeStart: string;
   rangeEnd: string;
   paramsJson: string;
 }
 
-const verifier = await loadVerifier();
-parentPort!.postMessage({ type: "ready", specHash: verifier.specHash });
+parentPort!.postMessage({ type: "ready" });
 
-parentPort!.on("message", (job: BucketJob) => {
+parentPort!.on("message", async (job: BucketJob) => {
   try {
-    const { maxScore, maxSeed } = verifier.evaluateRange(
-      BigInt(job.rangeStart),
-      BigInt(job.rangeEnd),
-      job.paramsJson
-    );
-    parentPort!.postMessage({
-      type: "result",
-      id: job.id,
-      maxScore: maxScore.toString(),
-      maxSeed: maxSeed.toString(),
-    });
+    const mod = await registry.get(job.hash);
+    const { maxScore, maxSeed } = mod.evaluateRange(BigInt(job.rangeStart), BigInt(job.rangeEnd), job.paramsJson);
+    parentPort!.postMessage({ type: "result", id: job.id, maxScore: maxScore.toString(), maxSeed: maxSeed.toString() });
   } catch (err) {
     parentPort!.postMessage({ type: "result", id: job.id, error: (err as Error).message });
   }

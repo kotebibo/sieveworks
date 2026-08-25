@@ -9,11 +9,11 @@ import type {
   ResultSubmission,
   SubmissionResponse,
 } from "@sieveworks/protocol";
-import type { SieveWorkerModule } from "@sieveworks/wasm-runtime";
 import type { BucketPool } from "./bucketPool.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
+import { registry } from "./moduleRegistry.js";
 
 /**
  * The verification pipeline (spec §8). Layered so each check catches what the
@@ -29,7 +29,6 @@ const CHALLENGE_BUCKETS = 8;
 export const CHALLENGE_WINDOW_S = Number(process.env.CHALLENGE_WINDOW_S ?? 90);
 
 export interface VerifyDeps {
-  verifier: SieveWorkerModule;
   bucketPool: BucketPool;
   leases: LeaseStore;
 }
@@ -38,6 +37,7 @@ interface SubmissionContext {
   chunkId: string;
   jobId: string;
   workerId: string;
+  specHash: string;
   rangeStart: bigint;
   rangeEnd: bigint;
   bucketSize: number;
@@ -70,7 +70,8 @@ export async function verifySubmission(
     });
     return { result_id: resultId, status: "rejected" };
   }
-  const recomputed = deps.verifier.evaluateSeed(witness, paramsJson);
+  const mod = await registry.get(ctx.specHash);
+  const recomputed = mod.evaluateSeed(witness, paramsJson);
   if (recomputed !== claimed) {
     await rejectResult(deps, resultId, ctx, "witness_failed", {
       slash: true,
@@ -140,7 +141,7 @@ export async function judgeChallengeResponse(
            r.witness_seed::text,
            c.id as chunk_id, c.range_start::text, c.range_end::text,
            j.id as job_id, j.bucket_size, j.params, j.price_per_chunk_lamports::text,
-           j.current_record_score, r.worker_id
+           j.current_record_score, j.worker_spec_hash, r.worker_id
     from challenges ch
     join results r on r.id = ch.result_id
     join chunks c on c.id = r.chunk_id
@@ -153,6 +154,7 @@ export async function judgeChallengeResponse(
     chunkId: row.chunk_id,
     jobId: row.job_id,
     workerId: row.worker_id,
+    specHash: row.worker_spec_hash,
     rangeStart: BigInt(row.range_start),
     rangeEnd: BigInt(row.range_end),
     bucketSize: row.bucket_size,
@@ -193,7 +195,7 @@ export async function judgeChallengeResponse(
     const bStart = ctx.rangeStart + BigInt(l.index) * BigInt(ctx.bucketSize);
     const bEndRaw = bStart + BigInt(ctx.bucketSize);
     const bEnd = bEndRaw < ctx.rangeEnd ? bEndRaw : ctx.rangeEnd;
-    const truth = await deps.bucketPool.evaluateBucket(bStart, bEnd, paramsJson);
+    const truth = await deps.bucketPool.evaluateBucket(ctx.specHash, bStart, bEnd, paramsJson);
     if (truth.maxScore !== leaf.maxScore || truth.maxSeed !== leaf.maxSeed) {
       return fail(
         `bucket ${l.index}: committed (${leaf.maxScore}, ${leaf.maxSeed}) but truth is (${truth.maxScore}, ${truth.maxSeed})`
@@ -220,7 +222,7 @@ export async function expireChallenges(deps: VerifyDeps): Promise<number> {
     select ch.id as challenge_id, r.id as result_id,
            c.id as chunk_id, c.range_start::text, c.range_end::text,
            j.id as job_id, j.bucket_size, j.params, j.price_per_chunk_lamports::text,
-           j.current_record_score, r.worker_id
+           j.current_record_score, j.worker_spec_hash, r.worker_id
     from challenges ch
     join results r on r.id = ch.result_id
     join chunks c on c.id = r.chunk_id
@@ -236,6 +238,7 @@ export async function expireChallenges(deps: VerifyDeps): Promise<number> {
         chunkId: row.chunk_id,
         jobId: row.job_id,
         workerId: row.worker_id,
+        specHash: row.worker_spec_hash,
         rangeStart: BigInt(row.range_start),
         rangeEnd: BigInt(row.range_end),
         bucketSize: row.bucket_size,

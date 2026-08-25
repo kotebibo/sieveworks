@@ -74,6 +74,34 @@ function buildWasm() {
   console.log(`worker_spec_hash: ${hash}`);
 }
 
+// hash-grind: a second, non-Minecraft worker module (standalone, no cubiomes).
+const HASHGRIND_SRC = join(root, "src", "hashgrind.c");
+
+function buildHashgrindNative() {
+  const outDir = join(root, "out", "native");
+  mkdirSync(outDir, { recursive: true });
+  const exe = join(outDir, platform() === "win32" ? "hashgrind.exe" : "hashgrind");
+  run("gcc", [...COMMON_FLAGS, "-o", exe, HASHGRIND_SRC, CLI_SRC]);
+  console.log(`native: ${exe}`);
+}
+
+function buildHashgrindWasm() {
+  const outDir = join(root, "out", "wasm");
+  mkdirSync(outDir, { recursive: true });
+  const wasm = join(outDir, "hashgrind.wasm");
+  run(findEmcc(), [
+    ...COMMON_FLAGS, "-sSTANDALONE_WASM", "--no-entry", "-sALLOW_MEMORY_GROWTH",
+    "-sEXPORTED_FUNCTIONS=_evaluate_seed,_evaluate_range,_spec_version,_malloc,_free",
+    "-o", wasm, HASHGRIND_SRC,
+  ]);
+  const hash = createHash("sha256").update(readFileSync(wasm)).digest("hex");
+  writeFileSync(join(outDir, "hashgrind.wasm.sha256"), hash + "\n");
+  console.log(`wasm: ${wasm}`);
+  console.log(`hashgrind worker_spec_hash: ${hash}`);
+}
+
 const target = process.argv[2] ?? "all";
 if (target === "native" || target === "all") buildNative();
 if (target === "wasm" || target === "all") buildWasm();
+if (target === "hashgrind-native" || target === "all") buildHashgrindNative();
+if (target === "hashgrind-wasm" || target === "all") buildHashgrindWasm();

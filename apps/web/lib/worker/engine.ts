@@ -86,10 +86,12 @@ export class ContributeEngine {
     this.wallet = walletFromSecretKey(this.seed);
     this.emit({ status: "starting", wallet: this.wallet, threads });
 
-    // One wasm fetch; each thread gets its own copy + instance (no shared memory).
+    // Fetch the job's OWN module by hash — the browser runs whatever worker the
+    // bounty pinned (Minecraft, hash-grind, or an uploaded one), all on the
+    // same rails. wasm-runtime verifies the hash before instantiation.
     const job = await (await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}`)).json();
     const specHash = job.job.worker_spec_hash as string;
-    const wasmBytes = await (await fetch("/sieve_core.wasm")).arrayBuffer();
+    const wasmBytes = await (await fetch(`${COORDINATOR_URL}/v1/specs/${specHash}/artifact`)).arrayBuffer();
 
     this.workers = [];
     await Promise.all(

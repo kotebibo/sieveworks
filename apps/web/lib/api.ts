@@ -80,6 +80,55 @@ export const fetchJob = (id: string) => get<JobDetail>(`/v1/jobs/${id}`);
 export const fetchJobResults = (id: string) => get<{ results: RecentResult[] }>(`/v1/jobs/${id}/results`);
 export const fetchFinds = () => get<{ finds: Find[] }>("/v1/finds");
 export const fetchLeaderboard = () => get<{ leaders: Leader[] }>("/v1/leaderboard");
+export interface WorkerSpec {
+  hash: string;
+  name: string;
+  description: string | null;
+  spec_version: string;
+  conformance: { passed?: boolean; buckets_checked?: number };
+  example_params: Record<string, unknown>;
+  default_range_start: string | null;
+  default_range_end: string | null;
+  is_builtin: boolean;
+  open_jobs: number;
+}
+
+export const fetchSpecs = () => get<{ specs: WorkerSpec[] }>("/v1/specs");
+export const specArtifactUrl = (hash: string) => `${COORDINATOR_URL}/v1/specs/${hash}/artifact`;
+
+export interface UploadResult {
+  ok: boolean;
+  hash?: string;
+  spec_version?: string;
+  reason?: string;
+}
+
+export async function uploadSpec(form: FormData): Promise<UploadResult> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/specs`, { method: "POST", body: form });
+  return (await res.json()) as UploadResult;
+}
+
+export interface CreateJobBody {
+  title: string;
+  worker_spec_hash: string;
+  game?: string;
+  params: Record<string, unknown>;
+  search_space_start: string;
+  search_space_end: string;
+  seeds_per_sec?: number;
+  budget_lamports?: number;
+  price_per_chunk_lamports?: number;
+}
+
+export async function createJobReq(body: CreateJobBody): Promise<{ job_id?: string; error?: unknown }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/jobs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await res.json()) as { job_id?: string; error?: unknown };
+}
+
 export const fetchWorker = (wallet: string) =>
   get<{ worker: { wallet_address: string; created_at: string }; stats: Record<string, string | number>; finds: unknown[] }>(
     `/v1/workers/${wallet}`
