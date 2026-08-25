@@ -99,10 +99,18 @@ export default function Contribute() {
       </dl>
 
       {stats?.wallet && (
-        <p className="num mt-3 text-xs text-[var(--text-dim)] flex flex-wrap gap-x-3">
-          <span className="inline-flex gap-1">worker key <Mono value={stats.wallet} kind="address" /></span>
-          {stats.currentChunk && <span>· working on {stats.currentChunk.slice(0, 8)}…</span>}
-        </p>
+        <div className="mt-3">
+          <p className="num text-xs text-[var(--text-dim)] flex flex-wrap gap-x-3">
+            <span className="inline-flex gap-1">worker key <Mono value={stats.wallet} kind="address" /></span>
+            {stats.currentChunk && <span>· working on {stats.currentChunk.slice(0, 8)}…</span>}
+          </p>
+          {running && stats.currentChunk && (
+            <div className="mt-1.5 h-1 w-full bg-[var(--panel-2)]">
+              <div className="h-full bg-[var(--accent)] transition-[width] duration-300"
+                style={{ width: `${Math.round((stats.chunkProgress ?? 0) * 100)}%` }} />
+            </div>
+          )}
+        </div>
       )}
 
       <section className="mt-4 panel">

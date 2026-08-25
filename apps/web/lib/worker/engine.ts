@@ -24,6 +24,7 @@ export interface EngineStats {
   sessionSeeds: number;
   sessionChunks: number;
   currentChunk: string | null;
+  chunkProgress: number; // 0..1 of the current chunk — keeps the ~25s wait alive
   log: string[];
 }
 
@@ -52,11 +53,14 @@ export class ContributeEngine {
     sessionSeeds: 0,
     sessionChunks: 0,
     currentChunk: null,
+    chunkProgress: 0,
     log: [],
   };
   private listener: Listener | null = null;
   private recentProgress: { at: number; seeds: number }[] = [];
   private retained = new Map<string, BucketLeaf[]>();
+  private chunkSeedsTotal = 1;
+  private chunkSeedsDone = 0;
 
   subscribe(listener: Listener): void {
     this.listener = listener;
@@ -132,6 +136,8 @@ export class ContributeEngine {
     const bucket = BigInt(assignment.bucket_size);
     const bucketsTotal = Number((end - start + bucket - 1n) / bucket);
     const paramsJson = JSON.stringify(assignment.params);
+    this.chunkSeedsTotal = Number(end - start);
+    this.chunkSeedsDone = 0;
     const t0 = performance.now();
 
     // Fan out contiguous bucket slices across threads.
@@ -248,9 +254,11 @@ export class ContributeEngine {
     this.recentProgress = this.recentProgress.filter((p) => now - p.at < 10_000);
     const windowSeeds = this.recentProgress.reduce((a, p) => a + p.seeds, 0);
     const windowMs = Math.max(now - (this.recentProgress[0]?.at ?? now), 1000);
+    this.chunkSeedsDone += seeds;
     this.emit({
       seedsPerSec: Math.round(windowSeeds / (windowMs / 1000)),
       sessionSeeds: this.stats.sessionSeeds + seeds,
+      chunkProgress: Math.min(1, this.chunkSeedsDone / this.chunkSeedsTotal),
     });
   }
 
