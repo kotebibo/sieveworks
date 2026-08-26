@@ -78,6 +78,7 @@ export const fetchStats = () => get<GlobalStats>("/v1/stats");
 export const fetchJobs = () => get<{ jobs: JobSummary[] }>("/v1/jobs");
 export const fetchJob = (id: string) => get<JobDetail>(`/v1/jobs/${id}`);
 export const fetchJobResults = (id: string) => get<{ results: RecentResult[] }>(`/v1/jobs/${id}/results`);
+export const resultsCsvUrl = (id: string, limit: number) => `${COORDINATOR_URL}/v1/jobs/${id}/results.csv?limit=${limit}`;
 export const fetchFinds = () => get<{ finds: Find[] }>("/v1/finds");
 export const fetchLeaderboard = () => get<{ leaders: Leader[] }>("/v1/leaderboard");
 export interface WorkerSpec {

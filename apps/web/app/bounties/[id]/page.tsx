@@ -5,6 +5,7 @@ import {
   fetchJob,
   fetchJobResults,
   fetchJobSwarm,
+  resultsCsvUrl,
   subscribeEvents,
   type JobDetail,
   type RecentResult,
@@ -84,6 +85,22 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
           )}
         </Panel>
       </div>
+
+      <Panel label="◇ results export" right={`${fmt(done)} verified`}>
+        <div className="flex flex-wrap items-center gap-3 text-[13px]">
+          <span className="text-[var(--text-dim)]">Download the top-scoring seeds, ranked, as CSV:</span>
+          {[10, 50, 100, 500].map((n) => (
+            <a key={n} href={resultsCsvUrl(id, n)}
+              className="num text-[12px] px-3 py-1.5 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
+              top {n} ↓
+            </a>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-[var(--text-faint)]">
+          One row per chunk-best (rank, score, seed, finder wallet, verified time). Only
+          deterministically verified results are included.
+        </p>
+      </Panel>
 
       <Panel label="stream // recent results" bodyClass="p-0">
         <div className="overflow-x-auto scroll-thin">

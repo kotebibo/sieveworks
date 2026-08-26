@@ -237,6 +237,32 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     return { worker: u, stats: agg, finds: recentFinds };
   });
 
+  // Results delivery for the funder: the top-scoring verified seeds across the
+  // whole search (one row per chunk-best), ranked, as a downloadable CSV.
+  app.get("/v1/jobs/:id/results.csv", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as { limit?: string };
+    const limit = Math.min(10000, Math.max(1, Number(q.limit ?? 100) || 100));
+    const [job] = await sql<{ title: string }[]>`select title from jobs where id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "not found" });
+    const rows = await sql<{ score: string; seed: string; wallet: string; verified_at: string }[]>`
+      select r.extremum_score::text as score, r.witness_seed::text as seed,
+             u.wallet_address as wallet, r.verified_at
+      from results r
+      join chunks c on c.id = r.chunk_id
+      join users u on u.id = r.worker_id
+      where c.job_id = ${id} and r.verification_state = 'passed'
+      order by r.extremum_score desc, r.witness_seed asc
+      limit ${limit}`;
+    const header = "rank,score,seed,finder_wallet,verified_at";
+    const lines = rows.map((r, i) => `${i + 1},${r.score},${r.seed},${r.wallet},${r.verified_at ?? ""}`);
+    const csv = [header, ...lines].join("\n") + "\n";
+    const safe = job.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 40);
+    reply.header("content-type", "text/csv; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="sieveworks-${safe}-top${rows.length}.csv"`);
+    return reply.send(csv);
+  });
+
   app.get("/v1/stats", async () => {
     const [row] = await sql`
       select
