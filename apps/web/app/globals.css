@@ -60,6 +60,10 @@ body {
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  /* The page must never scroll horizontally (spec §12). `clip` guards against
+   * stray wide content without creating a scroll container (keeps the sticky
+   * header working, unlike overflow-x: hidden). */
+  overflow-x: clip;
   /* the sieve mesh — the product's own metaphor as ambient texture */
   background-image:
     linear-gradient(var(--mesh) 1px, transparent 1px),

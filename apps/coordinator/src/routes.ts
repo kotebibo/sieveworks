@@ -273,19 +273,19 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   });
 
   app.get("/v1/leaderboard", async () => {
+    // Subqueries, not multi-join: joining results × finds × earnings would
+    // fan out into a cartesian product and inflate every count.
     const leaders = await sql`
-      select u.wallet_address,
-             count(r.id) filter (where r.verification_state = 'passed')::int as chunks,
-             count(f.id)::int as finds,
-             coalesce(sum(e.cumulative_lamports), 0)::text as earned_lamports
-      from users u
-      left join results r on r.worker_id = u.id
-      left join finds f on f.worker_id = u.id
-      left join earnings e on e.worker_id = u.id
-      where u.wallet_address not in ('coordinator-admin')
-      group by u.id
-      having count(r.id) filter (where r.verification_state = 'passed') > 0
-      order by chunks desc
+      select * from (
+        select u.wallet_address,
+               (select count(*) from results r where r.worker_id = u.id and r.verification_state = 'passed')::int as chunks,
+               (select count(*) from finds f where f.worker_id = u.id)::int as finds,
+               (select coalesce(sum(cumulative_lamports), 0) from earnings e where e.worker_id = u.id)::text as earned_lamports
+        from users u
+        where u.wallet_address <> 'coordinator-admin'
+      ) t
+      where t.chunks > 0
+      order by t.chunks desc
       limit 50`;
     return { leaders };
   });

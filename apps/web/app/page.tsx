@@ -46,7 +46,7 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-[1180px] px-5 sm:px-7">
       {/* ---------- hero ---------- */}
-      <section className="pt-14 sm:pt-[68px] grid gap-10 lg:grid-cols-[1.02fr_1fr] items-start">
+      <section className="pt-14 sm:pt-[68px] grid grid-cols-1 gap-10 lg:grid-cols-[1.02fr_1fr] items-start">
         <div>
           <div className="barlabel flex items-center gap-2.5 mb-5" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>
             <span className="inline-block w-[22px] h-px" style={{ background: "var(--accent)" }} />
@@ -197,9 +197,9 @@ export default function Home() {
 
 function HeroStat({ v, l, accent }: { v: string; l: string; accent?: boolean }) {
   return (
-    <div className="py-4 pr-4 border-r border-[var(--border)] last:border-r-0">
-      <div className="num text-[20px] font-medium tracking-[-0.02em]" style={accent ? { color: "var(--accent)" } : undefined}>{v}</div>
-      <div className="barlabel mt-1">{l}</div>
+    <div className="py-4 pr-4 border-r border-[var(--border)] last:border-r-0 min-w-0">
+      <div className="num text-[18px] sm:text-[20px] font-medium tracking-[-0.02em] truncate" style={accent ? { color: "var(--accent)" } : undefined}>{v}</div>
+      <div className="barlabel mt-1 truncate">{l}</div>
     </div>
   );
 }

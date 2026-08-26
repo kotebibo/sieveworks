@@ -15,7 +15,7 @@ export default function Finds() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-lg font-semibold">Verified finds</h1>
+      <h1 className="font-display text-xl font-bold tracking-tight">Verified finds</h1>
       <p className="mt-1 text-sm text-[var(--text-dim)]">
         Every discovery, deterministically re-verified and attributed. Records are written on-chain.
       </p>

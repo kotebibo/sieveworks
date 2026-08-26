@@ -32,31 +32,29 @@ export default function Modules() {
       <div className="space-y-3">
         {specs === null && <div className="skeleton h-20" />}
         {specs?.map((s) => (
-          <div key={s.hash} className="panel ticked p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="font-display font-bold text-[16px] flex items-center gap-2">
-                  {s.name}
-                  {s.is_builtin && <span className="barlabel" style={{ color: "var(--accent)" }}>built-in</span>}
-                  <span className="barlabel" style={{ color: "var(--verified)" }}>✓ conformant</span>
-                </div>
-                {s.description && <p className="text-[14px] text-[var(--text-dim)] mt-1 max-w-[64ch]">{s.description}</p>}
-                <div className="num text-xs text-[var(--text-dim)] mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                  <span>{s.spec_version}</span>
-                  <span className="inline-flex gap-1">hash <Mono value={s.hash} head={10} tail={6} /></span>
-                  <span>{fmt(s.open_jobs)} open {s.open_jobs === 1 ? "bounty" : "bounties"}</span>
-                  {s.is_builtin ? (
-                    <span>by Sieveworks</span>
-                  ) : s.publisher ? (
-                    <span className="inline-flex gap-1">by <Mono value={s.publisher} kind="address" /></span>
-                  ) : null}
-                </div>
+          <div key={s.hash} className="panel ticked p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-display font-bold text-[16px]">{s.name}</span>
+                {s.is_builtin && <span className="barlabel" style={{ color: "var(--accent)" }}>built-in</span>}
+                <span className="barlabel" style={{ color: "var(--verified)" }}>✓ conformant</span>
               </div>
-              <Link href={`/bounties/new?spec=${s.hash}`}
-                className="shrink-0 font-medium text-[13px] px-4 py-2 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
-                Post a bounty →
-              </Link>
+              {s.description && <p className="text-[14px] text-[var(--text-dim)] mt-1.5 max-w-[64ch]">{s.description}</p>}
+              <div className="num text-xs text-[var(--text-dim)] mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <span>{s.spec_version}</span>
+                <span className="inline-flex gap-1">hash <Mono value={s.hash} head={10} tail={6} /></span>
+                <span>{fmt(s.open_jobs)} open {s.open_jobs === 1 ? "bounty" : "bounties"}</span>
+                {s.is_builtin ? (
+                  <span>by Sieveworks</span>
+                ) : s.publisher ? (
+                  <span className="inline-flex gap-1">by <Mono value={s.publisher} kind="address" /></span>
+                ) : null}
+              </div>
             </div>
+            <Link href={`/bounties/new?spec=${s.hash}`}
+              className="shrink-0 self-start whitespace-nowrap font-medium text-[13px] px-4 py-2 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)]">
+              Post a bounty →
+            </Link>
           </div>
         ))}
       </div>

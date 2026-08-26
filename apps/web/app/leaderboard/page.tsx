@@ -15,7 +15,7 @@ export default function Leaderboard() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-lg font-semibold">Leaderboard</h1>
+      <h1 className="font-display text-xl font-bold tracking-tight">Leaderboard</h1>
       <p className="mt-1 text-sm text-[var(--text-dim)]">Contributors ranked by verified chunks.</p>
       {leaders === null && <div className="mt-4 space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>}
       {leaders?.length === 0 && <p className="mt-4 text-sm text-[var(--text-faint)]">No contributors yet.</p>}

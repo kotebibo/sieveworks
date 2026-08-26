@@ -44,10 +44,10 @@ export default function Contribute() {
 
       <div className="mt-5 panel ticked p-4">
         <div className="flex flex-wrap items-end gap-4">
-          <label className="text-xs text-[var(--text-dim)]">
+          <label className="text-xs text-[var(--text-dim)] w-full sm:w-auto min-w-0">
             job
             <select
-              className="num mt-1 block min-w-64 border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm text-[var(--text)] appearance-none"
+              className="num mt-1 block w-full sm:w-auto sm:min-w-64 max-w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm text-[var(--text)] appearance-none"
               value={jobId}
               onChange={(e) => setJobId(e.target.value)}
               disabled={running}

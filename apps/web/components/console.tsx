@@ -121,9 +121,9 @@ export function KpiStrip({ items }: { items: { label: string; value: string; acc
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-[var(--border)] panel ticked">
       {items.map((it) => (
-        <div key={it.label} className="px-3 py-2.5">
-          <div className="barlabel">{it.label}</div>
-          <div className="num font-display text-xl mt-0.5" style={it.accent ? { color: "var(--accent)" } : undefined}>
+        <div key={it.label} className="px-3 py-2.5 min-w-0">
+          <div className="barlabel truncate">{it.label}</div>
+          <div className="num font-display text-lg sm:text-xl mt-0.5 truncate" style={it.accent ? { color: "var(--accent)" } : undefined}>
             <LiveNum value={it.value} />
           </div>
         </div>
