@@ -14,6 +14,7 @@ import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
 import { registry } from "./moduleRegistry.js";
+import { notify } from "./notifications.js";
 
 /**
  * The verification pipeline (spec §8). Layered so each check catches what the
@@ -319,6 +320,30 @@ async function acceptResult(
         score: sub.extremum_score,
         seed: sub.witness_seed,
       });
+      const [finder] = await sql<{ wallet_address: string }[]>`select wallet_address from users where id = ${ctx.workerId}`;
+      if (finder) {
+        await notify(finder.wallet_address, "record_found", "You set a new record",
+          `Score ${sub.extremum_score}, seed ${sub.witness_seed}. It's now the top find on this bounty.`,
+          `/bounties/${ctx.jobId}`);
+      }
+    }
+  }
+
+  // Bounty completion: when the last chunk is accepted, close the job and
+  // notify the funder (fires once, on the open→closed transition).
+  const [remaining] = await sql<{ n: number }[]>`
+    select count(*)::int as n from chunks where job_id = ${ctx.jobId} and state <> 'accepted'`;
+  if (remaining!.n === 0) {
+    const closed = await sql<{ creator_id: string }[]>`
+      update jobs set status = 'closed', closed_at = now()
+      where id = ${ctx.jobId} and status = 'open' returning creator_id`;
+    if (closed.length > 0) {
+      const [creator] = await sql<{ wallet_address: string }[]>`select wallet_address from users where id = ${closed[0]!.creator_id}`;
+      if (creator) {
+        await notify(creator.wallet_address, "bounty_complete", "Your bounty is complete",
+          `All chunks verified. Download the top-scoring results as CSV.`, `/bounties/${ctx.jobId}`);
+      }
+      events.emit("bounty_complete", { job_id: ctx.jobId });
     }
   }
 }

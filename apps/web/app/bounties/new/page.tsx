@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { createJobReq, fetchSpecs, type WorkerSpec } from "@/lib/api";
 import { fmt } from "@/components/ui";
+import { useAuth } from "@/lib/auth";
 
 const SEED_SPACE = 281_474_976_710_656; // 2^48 reference
 const BROWSER_SEEDS_PER_SEC = 5000;
@@ -11,6 +12,7 @@ const BROWSER_SEEDS_PER_SEC = 5000;
 function NewBountyInner() {
   const params = useSearchParams();
   const router = useRouter();
+  const { authed, token, wallet, signIn, signingIn } = useAuth();
   const [specs, setSpecs] = useState<WorkerSpec[]>([]);
   const [specHash, setSpecHash] = useState(params.get("spec") ?? "");
   const [title, setTitle] = useState("");
@@ -59,6 +61,7 @@ function NewBountyInner() {
 
   async function post() {
     setError(null);
+    if (!token) { setError("sign in first"); return; }
     let parsed: Record<string, unknown>;
     try { parsed = JSON.parse(paramsJson); } catch { setError("params must be valid JSON"); return; }
     setPosting(true);
@@ -70,7 +73,7 @@ function NewBountyInner() {
       search_space_start: spaceStart,
       search_space_end: spaceEnd,
       seeds_per_sec: seedsPerSec,
-    });
+    }, token);
     setPosting(false);
     if (r.job_id) router.push(`/bounties/${r.job_id}`);
     else setError(typeof r.error === "string" ? r.error : "failed to post");
@@ -126,10 +129,17 @@ function NewBountyInner() {
       </div>
 
       <div className="mt-5 flex items-center gap-3">
-        <button onClick={post} disabled={posting || !specHash}
-          className="font-medium text-[14px] px-5 py-2.5 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
-          {posting ? "posting…" : "Post bounty"}
-        </button>
+        {authed ? (
+          <button onClick={post} disabled={posting || !specHash}
+            className="font-medium text-[14px] px-5 py-2.5 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+            {posting ? "posting…" : "Post bounty"}
+          </button>
+        ) : (
+          <button onClick={signIn} disabled={signingIn}
+            className="font-medium text-[14px] px-5 py-2.5 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+            {wallet ? (signingIn ? "signing…" : "Sign in to post") : "Connect wallet to post"}
+          </button>
+        )}
         {error && <span className="num text-xs" style={{ color: "var(--rejected)" }}>{error}</span>}
       </div>
     </div>

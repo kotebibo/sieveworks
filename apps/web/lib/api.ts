@@ -91,6 +91,7 @@ export interface WorkerSpec {
   default_range_start: string | null;
   default_range_end: string | null;
   is_builtin: boolean;
+  publisher: string | null;
   open_jobs: number;
 }
 
@@ -104,9 +105,50 @@ export interface UploadResult {
   reason?: string;
 }
 
-export async function uploadSpec(form: FormData): Promise<UploadResult> {
-  const res = await fetch(`${COORDINATOR_URL}/v1/specs`, { method: "POST", body: form });
+export async function uploadSpec(form: FormData, token: string): Promise<UploadResult> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/specs`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  });
   return (await res.json()) as UploadResult;
+}
+
+// ---- auth (Sign-In With Solana) ----
+export async function authNonce(wallet: string): Promise<{ nonce: string; message: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/auth/nonce`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet }),
+  });
+  if (!res.ok) throw new Error("nonce request failed");
+  return (await res.json()) as { nonce: string; message: string };
+}
+export async function authVerify(wallet: string, message: string, signature: string): Promise<{ token: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/auth/verify`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet, message, signature }),
+  });
+  if (!res.ok) throw new Error("sign-in verification failed");
+  return (await res.json()) as { token: string };
+}
+
+export interface Me {
+  user: { wallet_address: string; display_name: string | null; email: string | null; notify_prefs: Record<string, boolean> };
+  unread: number;
+}
+export async function fetchMe(token: string): Promise<Me> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/me`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw new Error("unauthorized");
+  return (await res.json()) as Me;
+}
+export async function updateMe(token: string, body: { email?: string | null; notify_prefs?: Record<string, boolean> }): Promise<void> {
+  await fetch(`${COORDINATOR_URL}/v1/me`, {
+    method: "PUT", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+export interface Notification { id: string; kind: string; title: string; body: string | null; link: string | null; read: boolean; created_at: string }
+export async function fetchNotifications(token: string): Promise<{ notifications: Notification[] }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/me/notifications`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw new Error("unauthorized");
+  return (await res.json()) as { notifications: Notification[] };
 }
 
 export interface CreateJobBody {
@@ -121,10 +163,10 @@ export interface CreateJobBody {
   price_per_chunk_lamports?: number;
 }
 
-export async function createJobReq(body: CreateJobBody): Promise<{ job_id?: string; error?: unknown }> {
+export async function createJobReq(body: CreateJobBody, token: string): Promise<{ job_id?: string; error?: unknown }> {
   const res = await fetch(`${COORDINATOR_URL}/v1/jobs`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
   return (await res.json()) as { job_id?: string; error?: unknown };

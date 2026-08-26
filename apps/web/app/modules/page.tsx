@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { fetchSpecs, uploadSpec, type UploadResult, type WorkerSpec } from "@/lib/api";
 import { Mono, fmt } from "@/components/ui";
+import { useAuth } from "@/lib/auth";
 
 export default function Modules() {
   const [specs, setSpecs] = useState<WorkerSpec[] | null>(null);
@@ -44,6 +45,11 @@ export default function Modules() {
                   <span>{s.spec_version}</span>
                   <span className="inline-flex gap-1">hash <Mono value={s.hash} head={10} tail={6} /></span>
                   <span>{fmt(s.open_jobs)} open {s.open_jobs === 1 ? "bounty" : "bounties"}</span>
+                  {s.is_builtin ? (
+                    <span>by Sieveworks</span>
+                  ) : s.publisher ? (
+                    <span className="inline-flex gap-1">by <Mono value={s.publisher} kind="address" /></span>
+                  ) : null}
                 </div>
               </div>
               <Link href={`/bounties/new?spec=${s.hash}`}
@@ -64,6 +70,7 @@ export default function Modules() {
 }
 
 function UploadPanel({ onDone }: { onDone: () => void }) {
+  const { authed, token, wallet, signIn, signingIn } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -73,7 +80,7 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
 
   const submit = async () => {
     const file = fileRef.current?.files?.[0];
-    if (!file || !name) return;
+    if (!file || !name || !token) return;
     setBusy(true);
     setResult(null);
     const form = new FormData();
@@ -82,7 +89,7 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
     form.append("example_params", params);
     form.append("wasm", file);
     try {
-      const r = await uploadSpec(form);
+      const r = await uploadSpec(form, token);
       setResult(r);
       if (r.ok) { setName(""); setDescription(""); onDone(); }
     } catch (e) {
@@ -91,6 +98,21 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
       setBusy(false);
     }
   };
+
+  if (!authed) {
+    return (
+      <div className="panel ticked p-4 mt-8">
+        <div className="barlabel mb-2">Upload a worker module (.wasm)</div>
+        <p className="text-[13px] text-[var(--text-dim)]">
+          Sign in with your wallet to publish a module — it'll be attributed to you as the publisher.
+        </p>
+        <button onClick={signIn} disabled={signingIn}
+          className="mt-3 font-medium text-[13px] px-4 py-2 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+          {wallet ? (signingIn ? "signing…" : "Sign in to upload") : "Connect wallet to upload"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="panel ticked p-4 mt-8">

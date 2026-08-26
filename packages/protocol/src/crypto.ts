@@ -31,3 +31,20 @@ export function walletFromSecretKey(secretKey: Uint8Array): string {
   const seed = secretKey.length === 64 ? secretKey.slice(0, 32) : secretKey;
   return bs58.encode(ed25519.getPublicKey(seed));
 }
+
+/** Verify an arbitrary UTF-8 message was signed by a wallet — the primitive
+ * behind Sign-In With Solana. Signing a message is free and off-chain. */
+export function signMessage(message: string, secretKey: Uint8Array): string {
+  const seed = secretKey.length === 64 ? secretKey.slice(0, 32) : secretKey;
+  return bs58.encode(ed25519.sign(new TextEncoder().encode(message), seed));
+}
+
+export function verifyWalletSignature(message: string, signatureBase58: string, walletAddress: string): boolean {
+  try {
+    const pubkey = bs58.decode(walletAddress);
+    if (pubkey.length !== 32) return false;
+    return ed25519.verify(bs58.decode(signatureBase58), new TextEncoder().encode(message), pubkey);
+  } catch {
+    return false;
+  }
+}

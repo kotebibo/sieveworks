@@ -81,7 +81,8 @@ async function generateHoneypots(
 }
 
 export async function createJob(
-  req: CreateJobRequest
+  req: CreateJobRequest,
+  creatorWallet = "coordinator-admin"
 ): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number }> {
   const workerSpecHash = req.worker_spec_hash;
   const start = BigInt(req.search_space_start);
@@ -96,11 +97,11 @@ export async function createJob(
     );
   }
 
-  // Jobs need a creator; until web job creation exists (Day 6), the admin
-  // endpoint owns them under a fixed pseudo-wallet.
+  // The creator is the authenticated wallet (or coordinator-admin for the
+  // token-gated admin path). Its user row must exist.
   const [creator] = await sql<{ id: string }[]>`
-    insert into users (wallet_address, display_name)
-    values ('coordinator-admin', 'Coordinator Admin')
+    insert into users (wallet_address)
+    values (${creatorWallet})
     on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
     returning id`;
 

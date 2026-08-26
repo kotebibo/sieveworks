@@ -3,8 +3,10 @@ import { Archivo, Public_Sans, Spline_Sans_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
-import { WalletContext, WalletButton } from "@/lib/wallet";
+import { WalletContext } from "@/lib/wallet";
+import { AuthProvider } from "@/lib/auth";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AuthButton } from "@/components/AuthButton";
 import { Wordmark } from "@/components/Wordmark";
 
 const display = Archivo({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-display", display: "swap" });
@@ -36,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${sans.variable} ${display.variable} ${mono.variable} min-h-screen antialiased`}>
         <ThemeProvider>
           <WalletContext>
+            <AuthProvider>
             <header className="border-b border-[var(--border)] sticky top-0 z-20 backdrop-blur-md"
               style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)" }}>
               <div className="mx-auto max-w-[1180px] px-5 sm:px-7 h-[58px] flex items-center gap-7">
@@ -48,15 +51,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <Link key={href} href={href} className="text-[var(--text-dim)] hover:text-[var(--text)]">{label}</Link>
                   ))}
                   <ThemeToggle />
-                  <WalletButton />
+                  <AuthButton />
                 </nav>
                 <div className="ml-auto sm:hidden flex items-center gap-2">
                   <ThemeToggle />
-                  <WalletButton />
+                  <AuthButton />
                 </div>
               </div>
             </header>
             <main>{children}</main>
+            </AuthProvider>
           </WalletContext>
         </ThemeProvider>
       </body>

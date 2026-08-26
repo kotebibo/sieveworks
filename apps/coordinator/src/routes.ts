@@ -16,6 +16,8 @@ import { env } from "./env.js";
 import { judgeChallengeResponse, verifySubmission } from "./verification.js";
 import { registry } from "./moduleRegistry.js";
 import { runConformanceGate } from "./conformance.js";
+import { completeSignIn, issueNonce, requireAuth } from "./auth.js";
+import { notify } from "./notifications.js";
 
 const LeaseRequest = z.object({
   job_id: z.uuid(),
@@ -29,13 +31,69 @@ interface Deps {
 }
 
 export function registerRoutes(app: FastifyInstance, deps: Deps): void {
-  // ---- job creation (open: anyone can post against a registered module) ---
+  // ---- auth: Sign-In With Solana -----------------------------------------
+  app.post("/v1/auth/nonce", async (req, reply) => {
+    const { wallet } = (req.body ?? {}) as { wallet?: string };
+    if (!wallet) return reply.code(400).send({ error: "wallet required" });
+    const challenge = await issueNonce(wallet);
+    if (!challenge) return reply.code(400).send({ error: "invalid wallet" });
+    return challenge; // { nonce, message } — client signs `message`
+  });
+
+  app.post("/v1/auth/verify", async (req, reply) => {
+    const { wallet, message, signature } = (req.body ?? {}) as { wallet?: string; message?: string; signature?: string };
+    if (!wallet || !message || !signature) return reply.code(400).send({ error: "wallet, message, signature required" });
+    const token = await completeSignIn(wallet, message, signature);
+    if (!token) return reply.code(401).send({ error: "signature invalid or nonce expired" });
+    return { token, wallet };
+  });
+
+  // ---- profile (email for notifications) ---------------------------------
+  app.get("/v1/me", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    const [u] = await sql`
+      select wallet_address, display_name, email, notify_prefs, created_at
+      from users where wallet_address = ${wallet}`;
+    const [counts] = await sql`
+      select count(*) filter (where not read)::int as unread from notifications where wallet = ${wallet}`;
+    return { user: u, unread: counts?.unread ?? 0 };
+  });
+
+  app.put("/v1/me", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    const body = (req.body ?? {}) as { email?: string | null; display_name?: string; notify_prefs?: Record<string, boolean> };
+    const email = body.email?.trim() || null;
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply.code(400).send({ error: "invalid email" });
+    await sql`
+      update users set
+        email = ${email},
+        display_name = coalesce(${body.display_name ?? null}, display_name),
+        notify_prefs = coalesce(${body.notify_prefs ? sql.json(body.notify_prefs as never) : null}, notify_prefs)
+      where wallet_address = ${wallet}`;
+    return { ok: true };
+  });
+
+  app.get("/v1/me/notifications", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    const items = await sql`
+      select id, kind, title, body, link, read, created_at
+      from notifications where wallet = ${wallet} order by created_at desc limit 50`;
+    await sql`update notifications set read = true where wallet = ${wallet} and not read`;
+    return { notifications: items };
+  });
+
+  // ---- job creation (requires sign-in; creator = authed wallet) ----------
   app.post("/v1/jobs", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
     const parsed = CreateJobRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
     const [spec] = await sql`select hash from worker_specs where hash = ${parsed.data.worker_spec_hash}`;
     if (!spec) return reply.code(400).send({ error: "unknown worker_spec_hash — upload/register the module first" });
-    const result = await createJob(parsed.data);
+    const result = await createJob(parsed.data, wallet);
     events.emit("job_created", { job_id: result.jobId });
     return {
       job_id: result.jobId,
@@ -63,7 +121,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const specs = await sql`
       select ws.hash, ws.name, ws.description, ws.spec_version, ws.conformance,
              ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
-             ws.is_builtin, ws.created_at,
+             ws.is_builtin, ws.publisher, ws.created_at,
              count(j.id) filter (where j.status = 'open')::int as open_jobs
       from worker_specs ws
       left join jobs j on j.worker_spec_hash = ws.hash
@@ -87,8 +145,11 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   });
 
   // Upload a module → run the conformance gate → register on pass. This is the
-  // self-serve platform surface: bring your own worker.
+  // self-serve platform surface: bring your own worker. Requires sign-in; the
+  // authed wallet becomes the module's publisher.
   app.post("/v1/specs", async (req, reply) => {
+    const publisher = requireAuth(req, reply);
+    if (!publisher) return;
     const parts = req.parts();
     let wasm: Buffer | null = null;
     let name = "", description = "", exampleParams = "{}";
@@ -108,12 +169,21 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const verdict = await runConformanceGate(bytes, JSON.stringify(params));
     if (!verdict.ok) return reply.code(422).send({ ok: false, hash: verdict.hash, reason: verdict.reason });
 
+    // Content-addressed: identical bytes = same module. Only the ORIGINAL
+    // publisher may update its metadata — a later uploader of the same hash
+    // can't rename someone else's module.
+    const [existing] = await sql<{ publisher: string | null; is_builtin: boolean }[]>`
+      select publisher, is_builtin from worker_specs where hash = ${verdict.hash}`;
+    if (existing && (existing.is_builtin || (existing.publisher && existing.publisher !== publisher))) {
+      return reply.code(200).send({ ok: true, hash: verdict.hash, spec_version: verdict.spec_version, note: "already registered by another publisher; metadata unchanged" });
+    }
     await sql`
-      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin)
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, publisher)
       values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
               ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
-              ${sql.json(params as never)}, false)
-      on conflict (hash) do update set name = excluded.name, description = excluded.description`;
+              ${sql.json(params as never)}, false, ${publisher})
+      on conflict (hash) do update set name = excluded.name, description = excluded.description, publisher = ${publisher}`;
+    await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is live.`, "/modules");
     events.emit("spec_registered", { hash: verdict.hash, name });
     return { ok: true, hash: verdict.hash, spec_version: verdict.spec_version, conformance: verdict };
   });
