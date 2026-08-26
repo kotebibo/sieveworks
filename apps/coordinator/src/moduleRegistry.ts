@@ -37,6 +37,14 @@ const BUILTINS = [
     default_range_start: "0",
     default_range_end: "5000000",
   },
+  {
+    file: "spawn_quality.wasm",
+    name: "Minecraft spawn quality",
+    description: "Find a cool seed: graded score weighting overworld structures near spawn (villages, temples, monuments, mansions, ancient cities) plus biome variety. What a community actually wants to run.",
+    example_params: { version_pin: "1.21.1", radius: 1000 },
+    default_range_start: "0",
+    default_range_end: "5000000",
+  },
 ];
 
 class ModuleRegistry {

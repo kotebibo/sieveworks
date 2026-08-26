@@ -100,8 +100,42 @@ function buildHashgrindWasm() {
   console.log(`hashgrind worker_spec_hash: ${hash}`);
 }
 
+// spawn_quality: a graded Minecraft "cool seed" scorer (needs cubiomes +
+// finders.c for structure location, which the biome-only scorers don't use).
+const SPAWNQ_SRC = join(root, "src", "spawn_quality.c");
+const SPAWNQ_CUBIOMES = [...CUBIOMES_SRCS, join(vendor, "finders.c")];
+
+function buildSpawnqNative() {
+  const outDir = join(root, "out", "native");
+  mkdirSync(outDir, { recursive: true });
+  const exe = join(outDir, platform() === "win32" ? "spawn_quality.exe" : "spawn_quality");
+  run("gcc", [...COMMON_FLAGS, "-o", exe, SPAWNQ_SRC, CLI_SRC, ...SPAWNQ_CUBIOMES, "-lm"]);
+  console.log(`native: ${exe}`);
+}
+
+function buildSpawnqWasm() {
+  const outDir = join(root, "out", "wasm");
+  mkdirSync(outDir, { recursive: true });
+  const wasm = join(outDir, "spawn_quality.wasm");
+  run(findEmcc(), [
+    ...COMMON_FLAGS, "-sSTANDALONE_WASM", "--no-entry", "-sALLOW_MEMORY_GROWTH",
+    "-sEXPORTED_FUNCTIONS=_evaluate_seed,_evaluate_range,_spec_version,_malloc,_free",
+    "-o", wasm, SPAWNQ_SRC, ...SPAWNQ_CUBIOMES, "-lm",
+  ]);
+  const hash = createHash("sha256").update(readFileSync(wasm)).digest("hex");
+  writeFileSync(join(outDir, "spawn_quality.wasm.sha256"), hash + "\n");
+  console.log(`wasm: ${wasm}`);
+  console.log(`spawn_quality worker_spec_hash: ${hash}`);
+}
+
 const target = process.argv[2] ?? "all";
-if (target === "native" || target === "all") buildNative();
-if (target === "wasm" || target === "all") buildWasm();
-if (target === "hashgrind-native" || target === "all") buildHashgrindNative();
-if (target === "hashgrind-wasm" || target === "all") buildHashgrindWasm();
+if (target === "spawnq-native") {
+  buildSpawnqNative();
+} else if (target === "spawnq-wasm") {
+  buildSpawnqWasm();
+} else {
+  if (target === "native" || target === "all") buildNative();
+  if (target === "wasm" || target === "all") buildWasm();
+  if (target === "hashgrind-native" || target === "all") buildHashgrindNative();
+  if (target === "hashgrind-wasm" || target === "all") buildHashgrindWasm();
+}
