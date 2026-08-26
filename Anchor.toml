@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-sieveworks = "Sievew0rks111111111111111111111111111111111"
+sieveworks = "BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf"
 
 [registry]
 url = "https://api.apr.dev"

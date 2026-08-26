@@ -20,7 +20,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
-declare_id!("Sievew0rks111111111111111111111111111111111");
+declare_id!("BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf");
 
 // Unstake cooldown in slots (~0.4s/slot on Solana → ~1 hour). A worker can't
 // stake, grab paid work, then instantly pull the bond before an audit lands.

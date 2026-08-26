@@ -17,4 +17,8 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
-anchor-lang = "0.30.1"
+# init-if-needed: stake top-ups and per-job earnings accounts are created on
+# first use. Anchor gates this behind a feature flag because init_if_needed is
+# a re-initialization-attack footgun — guarded here by only writing identity
+# fields when the account is fresh (worker == default), never resetting balances.
+anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
