@@ -247,7 +247,8 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (!job) return reply.code(404).send({ error: "not found" });
     const rows = await sql<{ score: string; seed: string; wallet: string; verified_at: string }[]>`
       select r.extremum_score::text as score, r.witness_seed::text as seed,
-             u.wallet_address as wallet, r.verified_at
+             u.wallet_address as wallet,
+             to_char(r.verified_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as verified_at
       from results r
       join chunks c on c.id = r.chunk_id
       join users u on u.id = r.worker_id

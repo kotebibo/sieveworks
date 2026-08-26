@@ -250,7 +250,29 @@ export async function expireChallenges(deps: VerifyDeps): Promise<number> {
       { slash: true }
     );
   }
-  return expired.length;
+
+  // Self-heal: a challenge that was ANSWERED but never judged (e.g. the
+  // coordinator restarted mid-judge, or a transient error) leaves the chunk
+  // stuck in 'verifying' forever — the loop above only catches UNanswered
+  // ones. After a short stall window, return the range to the pool WITHOUT
+  // slashing: this is a coordinator hiccup, not worker fraud.
+  const stalled = await sql<{ challenge_id: string; result_id: string; chunk_id: string; job_id: string }[]>`
+    select ch.id as challenge_id, r.id as result_id, c.id as chunk_id, c.job_id
+    from challenges ch
+    join results r on r.id = ch.result_id
+    join chunks c on c.id = r.chunk_id
+    where c.state = 'verifying' and ch.passed is null and ch.responded_at is not null
+      and ch.responded_at < now() - interval '30 seconds'`;
+  for (const row of stalled) {
+    await sql`update challenges set passed = false where id = ${row.challenge_id}`;
+    await sql`update results set verification_state = 'failed', verified_at = now() where id = ${row.result_id}`;
+    await sql`update chunks set state = 'pending', leased_to = null, lease_nonce = null,
+      lease_expires_at = null, leased_at = null where id = ${row.chunk_id}`;
+    await deps.leases.clear(row.chunk_id);
+    events.emit("chunk_reclaimed", { chunk_id: row.chunk_id, job_id: row.job_id, reason: "stalled_challenge" });
+  }
+
+  return expired.length + stalled.length;
 }
 
 async function acceptResult(
