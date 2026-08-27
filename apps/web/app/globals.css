@@ -17,7 +17,7 @@
   --border-bright: #343941;
   --text: #ECEDEF;
   --text-dim: #969CA5;
-  --text-faint: #5A606A;
+  --text-faint: #868C96;  /* lifted to clear WCAG AA (was #5A606A ≈ 3:1 on bg) */
   --accent: #D4A62A;     /* brass */
   --accent-2: #8A6E1C;
   --accent-dim: #8A6E1C;
@@ -38,7 +38,7 @@
   --border-bright: #C6C6C3;
   --text: #16181B;
   --text-dim: #585D64;
-  --text-faint: #8A8F97;
+  --text-faint: #6B707A;  /* darkened to clear WCAG AA on the light surface */
   --accent: #8A6A12;     /* brass, light */
   --accent-2: #B9962F;
   --accent-dim: #B9962F;
@@ -64,14 +64,21 @@ body {
    * stray wide content without creating a scroll container (keeps the sticky
    * header working, unlike overflow-x: hidden). */
   overflow-x: clip;
-  /* the sieve mesh — the product's own metaphor as ambient texture */
+  /* the sieve mesh — the product's own metaphor as ambient texture. This is a
+   * deliberate measurement-surface grid (Sieveworks = a sieve), not decorative
+   * filler, so we waive impeccable's generic grid-background heuristic here. */
+  /* impeccable-disable-next-line codex-grid-background -- sieve is the product metaphor */
   background-image:
     linear-gradient(var(--mesh) 1px, transparent 1px),
     linear-gradient(90deg, var(--mesh) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
-.font-display { font-family: var(--font-display), "Archivo", sans-serif; }
+.font-display {
+  font-family: var(--font-display), "Newsreader", Georgia, "Times New Roman", serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
 .num {
   font-family: var(--font-mono), "Spline Sans Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
@@ -90,7 +97,7 @@ body {
 
 .barlabel {
   font-family: var(--font-mono), monospace;
-  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--text-faint);
 }
 
@@ -105,6 +112,78 @@ body {
 
 @keyframes skeleton { 0%,100% { opacity: 0.35; } 50% { opacity: 0.6; } }
 .skeleton { background: var(--panel-2); animation: skeleton 1.4s ease-in-out infinite; }
+
+/* One choreographed page-load entrance (hero). Staggered via inline delay. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+.reveal { opacity: 0; animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.reveal-panel { opacity: 0; animation: panel-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.reveal-fade { opacity: 0; animation: fade-in 0.9s ease forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .reveal-panel, .reveal-fade { opacity: 1; animation: none; transform: none; }
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.live-pulse { animation: live-pulse 2s ease-in-out infinite; }
+
+/* ============================================================
+   DELIGHT — on the metallurgy/sieve metaphor. All motion here is
+   ambient/hover, so it's gated behind prefers-reduced-motion below.
+   ============================================================ */
+
+/* Metallic sheen: a specular highlight sweeps across brass surfaces on hover.
+   Brass is metal — so it catches the light. Put .sheen on a positioned,
+   overflow-clipped element (the buttons already are). */
+.sheen { position: relative; overflow: hidden; }
+.sheen::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: skewX(-18deg); opacity: 0; pointer-events: none;
+}
+.sheen:hover::after { animation: sheen-sweep 0.7s ease-out; }
+@keyframes sheen-sweep {
+  0% { left: -60%; opacity: 0; }
+  12% { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
+}
+
+/* Sieve sweep: a faint brass scan-line drifts across the grid — the product
+   literally sieving in the background. Overlay on the sieve panel body. */
+.sieve-sweep { position: relative; }
+.sieve-sweep::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 16%, transparent) 48%, color-mix(in srgb, var(--accent) 22%, transparent) 50%, color-mix(in srgb, var(--accent) 16%, transparent) 52%, transparent 100%);
+  background-size: 220% 100%; background-repeat: no-repeat;
+  mix-blend-mode: screen; opacity: 0.9;
+  animation: sieve-sweep 6.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes sieve-sweep {
+  0% { background-position: 140% 0; }
+  55%, 100% { background-position: -60% 0; }
+}
+
+/* Nav underline draws in from the left on hover. */
+.navlink { position: relative; }
+.navlink::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -5px; height: 1.5px;
+  background: var(--accent); transform: scaleX(0); transform-origin: left;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.navlink:hover::after { transform: scaleX(1); }
+
+/* Sieve cells brighten when you point at the grid — it's alive. */
+.sieve-cell { transition: fill-opacity 0.15s ease; }
+.sieve-cell:hover { fill-opacity: 1 !important; }
+
+/* Wordmark glyph gives a quarter-turn on hover. */
+.wordmark-spin { transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+a:hover > .wordmark-spin { transform: rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheen:hover::after { animation: none; }
+  .sieve-sweep::before { animation: none; opacity: 0; }
+  .wordmark-spin { transition: none; }
+}
 
 .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-thin::-webkit-scrollbar-thumb { background: var(--border-bright); }

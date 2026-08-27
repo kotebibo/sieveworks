@@ -2,7 +2,7 @@
  * mesh and search space at once. Renders crisp at 16px. */
 export function Wordmark({ size = 22 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 22 22" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 22 22" aria-hidden="true" className="wordmark-spin" style={{ transformOrigin: "center" }}>
       <g fill="none" stroke="currentColor" strokeWidth="1.1" opacity="0.45">
         <path d="M1 6h20M1 11h20M1 16h20M6 1v20M11 1v20M16 1v20" />
       </g>

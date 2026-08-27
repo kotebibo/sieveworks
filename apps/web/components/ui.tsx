@@ -16,6 +16,39 @@ export function fmt(n: number | string): string {
   return Number.isFinite(v) ? v.toLocaleString("en-US") : "—";
 }
 
+/** Counts up from 0 to `value` on mount (easeOutCubic). Respects reduced motion.
+ * `format` maps the animating float to display text. Telemetry that feels live. */
+export function CountUp({ value, format, className = "" }: { value: number; format?: (n: number) => string; className?: string }) {
+  // `mounted` guards hydration: the first client render (mounted=false) emits
+  // exactly what the server did — the final `value` — so there is never a text
+  // mismatch. Animation only begins after mount, purely client-side.
+  const [mounted, setMounted] = useState(false);
+  const [n, setN] = useState(value);
+  const from = useRef(value);
+  const raf = useRef<number | undefined>(undefined);
+  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setN(value); from.current = value;
+      return;
+    }
+    const start = performance.now();
+    const a = from.current, b = value, dur = 1100;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setN(a + (b - a) * eased);
+      if (p < 1) raf.current = requestAnimationFrame(tick);
+      else { setN(b); from.current = b; }
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [value, mounted]);
+  const f = format ?? ((x: number) => String(Math.round(x)));
+  return <span className={className}>{f(mounted ? n : value)}</span>;
+}
+
 /** A number that flashes when its value changes. Used for every live metric. */
 export function LiveNum({ value, className = "" }: { value: string; className?: string }) {
   const [flash, setFlash] = useState(false);
@@ -91,10 +124,11 @@ export function Mono({
 export function Progress({ done, total }: { done: number; total: number }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
-    <div className="h-1.5 w-full bg-[var(--panel-2)]">
+    <div className="h-1.5 w-full bg-[var(--panel-2)] overflow-hidden">
+      {/* animate transform, not width — GPU-composited, no layout thrash */}
       <div
-        className="h-full bg-[var(--accent)] transition-[width] duration-500 ease-out"
-        style={{ width: `${pct}%` }}
+        className="h-full w-full bg-[var(--accent)] origin-left transition-transform duration-500 ease-out"
+        style={{ transform: `scaleX(${pct / 100})` }}
       />
     </div>
   );
@@ -131,10 +165,10 @@ export function Button({
   disabled?: boolean;
   title?: string;
 }) {
-  const base = "font-display tracking-wide inline-flex items-center gap-2 px-4 py-2 text-[13px] border transition-colors disabled:opacity-40";
+  const base = "font-medium tracking-wide inline-flex items-center gap-2 px-4 py-2 text-[13px] border transition-colors disabled:opacity-40";
   const styles =
     variant === "primary"
-      ? "border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"
+      ? "sheen border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"
       : variant === "danger"
         ? "border-[var(--rejected)] text-[var(--rejected)] hover:bg-[var(--rejected)] hover:text-[var(--bg)]"
         : "border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--text)]";

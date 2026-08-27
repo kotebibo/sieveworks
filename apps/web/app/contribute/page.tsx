@@ -105,24 +105,45 @@ export default function Contribute() {
             {stats.currentChunk && <span>· working on {stats.currentChunk.slice(0, 8)}…</span>}
           </p>
           {running && stats.currentChunk && (
-            <div className="mt-1.5 h-1 w-full bg-[var(--panel-2)]">
-              <div className="h-full bg-[var(--accent)] transition-[width] duration-300"
-                style={{ width: `${Math.round((stats.chunkProgress ?? 0) * 100)}%` }} />
+            <div className="mt-1.5 h-1 w-full bg-[var(--panel-2)] overflow-hidden">
+              <div className="h-full w-full bg-[var(--accent)] origin-left transition-transform duration-300"
+                style={{ transform: `scaleX(${stats.chunkProgress ?? 0})` }} />
             </div>
           )}
         </div>
       )}
 
-      <section className="mt-4 panel">
-        <div className="border-b border-[var(--border)] px-4 py-2 text-[11px] uppercase tracking-wider text-[var(--text-dim)]">log</div>
-        <ul className="num divide-y divide-[var(--border)] text-xs">
-          {(stats?.log ?? []).length === 0 && <li className="px-4 py-3 text-[var(--text-faint)]">idle</li>}
-          {(stats?.log ?? []).map((line, i) => (
-            <li key={i} className="px-4 py-1.5" style={{ color: line.includes("accepted") ? "var(--verified)" : line.includes("rejected") ? "var(--rejected)" : "var(--text-dim)" }}>
-              {line}
-            </li>
-          ))}
-        </ul>
+      <section className="mt-4 panel ticked flex flex-col">
+        <div className="border-b border-[var(--border)] px-4 py-2 flex items-center justify-between">
+          <span className="text-[11px] uppercase tracking-wider text-[var(--text-dim)]">log</span>
+          <span className="num text-[11px] text-[var(--text-faint)]">{(stats?.log ?? []).length} lines</span>
+        </div>
+        {/* fixed-height, scrollable terminal so it's a defined block, not empty void.
+            The 26px ruled lines are a deliberate log-terminal texture (each row sits on
+            a rule), not generic stripe decoration. */}
+        {/* impeccable-disable-next-line repeating-stripes-gradient -- terminal row ruling */}
+        <div className="h-[340px] overflow-y-auto scroll-thin"
+          style={{ backgroundImage: "repeating-linear-gradient(0deg, var(--panel-2) 0, var(--panel-2) 1px, transparent 1px, transparent 26px)", backgroundSize: "100% 26px" }}>
+          {(stats?.log ?? []).length === 0 ? (
+            <div className="h-full flex items-center justify-center text-center px-4">
+              <div>
+                <div className="num text-xs text-[var(--text-faint)]">— idle —</div>
+                <div className="text-[12px] text-[var(--text-faint)] mt-1 max-w-[36ch]">
+                  Pick a job and press Start sieving. Leased ranges, verifications, and accepted chunks stream here.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <ul className="num text-xs">
+              {(stats?.log ?? []).map((line, i) => (
+                <li key={i} className="px-4 h-[26px] flex items-center"
+                  style={{ color: line.includes("accepted") ? "var(--verified)" : line.includes("rejected") ? "var(--rejected)" : "var(--text-dim)" }}>
+                  <span className="text-[var(--text-faint)] mr-2">›</span>{line}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
     </div>
   );

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { fetchFinds, fetchJobResults, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats } from "@/lib/api";
 import { Sieve } from "@/components/Sieve";
-import { Mono, fmt } from "@/components/ui";
+import { CountUp, Mono, fmt } from "@/components/ui";
 
 export default function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
@@ -45,71 +45,75 @@ export default function Home() {
 
   return (
     <div className="mx-auto max-w-[1180px] px-5 sm:px-7">
-      {/* ---------- hero ---------- */}
-      <section className="pt-14 sm:pt-[68px] grid grid-cols-1 gap-10 lg:grid-cols-[1.02fr_1fr] items-start">
-        <div>
-          <div className="barlabel flex items-center gap-2.5 mb-5" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>
-            <span className="inline-block w-[22px] h-px" style={{ background: "var(--accent)" }} />
-            Verifiable distributed search
+      {/* ---------- hero (fullscreen) ---------- */}
+      <section className="min-h-[calc(100svh-58px)] flex flex-col justify-center py-10">
+        <div className="grid grid-cols-1 gap-10 lg:gap-14 lg:grid-cols-[1.02fr_1fr] items-center">
+          <div>
+            <div className="reveal barlabel flex items-center gap-2.5 mb-5" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>
+              <span className="inline-block w-[22px] h-px" style={{ background: "var(--accent)" }} />
+              Verifiable distributed search
+            </div>
+            <h1 className="reveal font-display font-extrabold leading-[0.98] tracking-[-0.035em] text-[clamp(38px,5.1vw,62px)]" style={{ animationDelay: "0.06s" }}>
+              Pay strangers<br />to search.<br /><span className="italic font-medium text-[var(--accent)]">Prove they did.</span>
+            </h1>
+            <p className="reveal mt-5 text-[16.5px] text-[var(--text-dim)] max-w-[44ch]" style={{ animationDelay: "0.14s" }}>
+              Fund a search. Contributors run pieces of it in a browser tab and get paid per verified
+              chunk. Every result carries a witness we can re-check in microseconds — so{" "}
+              <strong className="text-[var(--text)] font-medium">proving the work costs under 1%</strong> of
+              doing it, not the 200% you pay to run everything three times.
+            </p>
+            <div className="reveal mt-7 flex gap-3 flex-wrap" style={{ animationDelay: "0.22s" }}>
+              <Link href="/contribute" className="sheen font-medium text-[14px] px-5 py-[11px] text-[var(--bg)] transition-[filter] hover:brightness-110" style={{ background: "var(--accent)" }}>
+                Start contributing
+              </Link>
+              <Link href="/bounties" className="font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">
+                Post a search
+              </Link>
+            </div>
           </div>
-          <h1 className="font-display font-extrabold leading-[0.98] tracking-[-0.035em] text-[clamp(38px,5.1vw,62px)]">
-            Pay strangers<br />to search.<br /><span className="text-[var(--text-dim)]">Prove they did.</span>
-          </h1>
-          <p className="mt-5 text-[16.5px] text-[var(--text-dim)] max-w-[44ch]">
-            Fund a search. Contributors run pieces of it in a browser tab and get paid per verified
-            chunk. Every result carries a witness we can re-check in microseconds — so{" "}
-            <strong className="text-[var(--text)] font-medium">proving the work costs under 1%</strong> of
-            doing it, not the 200% you pay to run everything three times.
-          </p>
-          <div className="mt-7 flex gap-3 flex-wrap">
-            <Link href="/contribute" className="font-medium text-[14px] px-5 py-[11px] text-[var(--bg)]" style={{ background: "var(--accent)" }}>
-              Start contributing
-            </Link>
-            <Link href="/bounties" className="font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)]">
-              Post a search
-            </Link>
-          </div>
-          <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 border-t border-[var(--border)]">
-            <HeroStat v={stats ? fmt(stats.chunks_accepted) : "0"} l="Chunks verified" />
-            <HeroStat v={stats ? String(stats.contributors) : "0"} l="Contributors" />
-            <HeroStat v={stats ? fmt(Number(stats.seeds_evaluated)) : "0"} l="Seeds total" />
-            <HeroStat v="0.45%" l="Verify overhead" accent />
+
+          <div className="reveal-panel" style={{ animationDelay: "0.3s" }}>
+            <div className="panel">
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-[var(--border)] barlabel">
+                <span className="w-1.5 h-1.5 rounded-full live-pulse" style={{ background: "var(--verified)" }} />
+                <span className="truncate normal-case tracking-normal text-[var(--text-dim)]">{swarm.title ? swarm.title : "no active job"}</span>
+                <span className="num ml-auto shrink-0 text-[var(--text-dim)] normal-case tracking-normal">{cover}% covered</span>
+              </div>
+              <div className="p-3.5 sieve-sweep">
+                {swarm.job_id ? (
+                  <Link href={`/bounties/${swarm.job_id}`}><Sieve cells={swarm.cells} /></Link>
+                ) : (
+                  <Sieve cells="" />
+                )}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-3.5 py-2.5 border-t border-[var(--border)] barlabel normal-case tracking-normal">
+                <Leg c="var(--cell-empty)" t="unclaimed" />
+                <Leg c="transparent" t="searching" border />
+                <Leg c="var(--verified)" t="verified" />
+                <Leg c="var(--accent)" t="record" />
+                <Leg c="var(--rejected)" t="rejected" />
+              </div>
+            </div>
+            <div className="panel mt-3.5 px-3.5 py-3 num text-[12px] flex items-center gap-3 overflow-x-auto scroll-thin whitespace-nowrap">
+              <span className="shrink-0" style={{ color: "var(--verified)" }}>✓ witness</span>
+              <span className="text-[var(--text-faint)]">max</span>
+              <span className="text-[var(--text)]">{witness ? witness.score : "—"}</span>
+              <span className="text-[var(--text-faint)]">←</span>
+              <span className="text-[var(--text-faint)]">seed</span>
+              <span className="text-[var(--text)]">{witness ? witness.seed : "—"}</span>
+              <span className="text-[var(--text-faint)]">·</span>
+              <span className="text-[var(--text-faint)]">rechecked in</span>
+              <span className="text-[var(--text)]">0.4ms</span>
+            </div>
           </div>
         </div>
 
-        <div>
-          <div className="panel">
-            <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-[var(--border)] barlabel">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--verified)" }} />
-              {swarm.title ? swarm.title : "no active job"}
-              <span className="num ml-auto text-[var(--text-dim)] normal-case tracking-normal">{cover}% covered</span>
-            </div>
-            <div className="p-3.5">
-              {swarm.job_id ? (
-                <Link href={`/bounties/${swarm.job_id}`}><Sieve cells={swarm.cells} /></Link>
-              ) : (
-                <Sieve cells="" />
-              )}
-            </div>
-            <div className="flex flex-wrap gap-4 px-3.5 py-2.5 border-t border-[var(--border)] barlabel normal-case tracking-normal">
-              <Leg c="var(--cell-empty)" t="unclaimed" />
-              <Leg c="transparent" t="searching" border />
-              <Leg c="var(--verified)" t="verified" />
-              <Leg c="var(--accent)" t="record" />
-              <Leg c="var(--rejected)" t="rejected" />
-            </div>
-          </div>
-          <div className="panel mt-3.5 px-3.5 py-3 num text-[12px] flex items-center gap-3 overflow-hidden whitespace-nowrap">
-            <span style={{ color: "var(--verified)" }}>✓ witness</span>
-            <span className="text-[var(--text-faint)]">max</span>
-            <span className="text-[var(--text)]">{witness ? witness.score : "—"}</span>
-            <span className="text-[var(--text-faint)]">←</span>
-            <span className="text-[var(--text-faint)]">seed</span>
-            <span className="text-[var(--text)]">{witness ? witness.seed : "—"}</span>
-            <span className="text-[var(--text-faint)]">·</span>
-            <span className="text-[var(--text-faint)]">rechecked in</span>
-            <span className="text-[var(--text)]">0.4ms</span>
-          </div>
+        {/* full-width stat band — clearly separated from the sieve grid */}
+        <div className="reveal-fade mt-14 sm:mt-20 pt-6 border-t border-[var(--border)] grid grid-cols-2 sm:grid-cols-4" style={{ animationDelay: "0.44s" }}>
+          <HeroStat n={stats ? Number(stats.chunks_accepted) : 0} l="Chunks verified" />
+          <HeroStat n={stats ? Number(stats.contributors) : 0} l="Contributors" />
+          <HeroStat n={stats ? Number(stats.seeds_evaluated) : 0} l="Seeds total" />
+          <HeroStat v="0.45%" l="Verify overhead" accent />
         </div>
       </section>
 
@@ -184,7 +188,7 @@ export default function Home() {
       </section>
 
       <footer className="mt-24 border-t border-[var(--border)] py-7 mb-16">
-        <div className="num text-[11.5px] text-[var(--text-faint)] flex flex-wrap gap-4 items-center tracking-wide">
+        <div className="num text-[12px] text-[var(--text-faint)] flex flex-wrap gap-4 items-center tracking-wide">
           <span>SIEVEWORKS</span><span>·</span><span>Solana devnet</span><span>·</span>
           <a href="https://github.com/konstantinesolana/sieveworks" className="hover:text-[var(--text)]">open source</a>
           <span>·</span><Link href="/how-it-works" className="hover:text-[var(--text)]">how it works</Link>
@@ -195,11 +199,13 @@ export default function Home() {
   );
 }
 
-function HeroStat({ v, l, accent }: { v: string; l: string; accent?: boolean }) {
+function HeroStat({ v, n, l, accent }: { v?: string; n?: number; l: string; accent?: boolean }) {
   return (
-    <div className="py-4 pr-4 border-r border-[var(--border)] last:border-r-0 min-w-0">
-      <div className="num text-[18px] sm:text-[20px] font-medium tracking-[-0.02em] truncate" style={accent ? { color: "var(--accent)" } : undefined}>{v}</div>
-      <div className="barlabel mt-1 truncate">{l}</div>
+    <div className="px-4 first:pl-0 py-1 border-r border-[var(--border)] last:border-r-0 min-w-0">
+      <div className="num text-[22px] sm:text-[26px] font-semibold tracking-[-0.02em] leading-none" style={accent ? { color: "var(--accent)" } : undefined}>
+        {typeof n === "number" ? <CountUp value={n} format={fmt} /> : v}
+      </div>
+      <div className="barlabel mt-2">{l}</div>
     </div>
   );
 }
@@ -220,7 +226,7 @@ function Step({ state, dot, h, p, cost }: { state: string; dot: string; h: strin
       </div>
       <h3 className="font-display font-bold text-[16px] tracking-[-0.015em] mb-2">{h}</h3>
       <p className="text-[14px] text-[var(--text-dim)]">{p}</p>
-      <div className="num text-[11.5px] mt-3.5" style={{ color: "var(--accent)" }}>{cost}</div>
+      <div className="num text-[12px] mt-3.5" style={{ color: "var(--accent)" }}>{cost}</div>
     </div>
   );
 }

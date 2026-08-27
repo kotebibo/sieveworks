@@ -67,7 +67,7 @@ export function Sieve({ cells, cols = 46 }: { cells: string; cols?: number }) {
             fillOpacity={op(i, code)}
             stroke={searching ? "var(--accent-dim)" : undefined}
             strokeWidth={searching ? 1 : undefined}
-            className={popped.has(i) ? "cell-pop" : undefined}
+            className={`sieve-cell${popped.has(i) ? " cell-pop" : ""}`}
             style={popped.has(i) ? { transformOrigin: `${x + CELL / 2}px ${y + CELL / 2}px` } : undefined}
           />
         );

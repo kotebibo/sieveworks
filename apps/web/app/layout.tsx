@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Archivo, Public_Sans, Spline_Sans_Mono } from "next/font/google";
+import { Newsreader, Public_Sans, Spline_Sans_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
@@ -9,7 +9,11 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { AuthButton } from "@/components/AuthButton";
 import { Wordmark } from "@/components/Wordmark";
 
-const display = Archivo({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-display", display: "swap" });
+// Newsreader — a literary serif with optical sizing and true italics. The
+// anti-generic display voice: serif headlines against grotesque body + mono
+// data = the "assay certificate / ledger of record" feel. (Chosen over
+// Fraunces, which has become a designer default — impeccable flags it.)
+const display = Newsreader({ subsets: ["latin"], weight: ["500", "600", "700", "800"], style: ["normal", "italic"], variable: "--font-display", display: "swap" });
 const sans = Public_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-sans", display: "swap" });
 const mono = Spline_Sans_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-mono", display: "swap" });
 
@@ -48,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
                 <nav className="hidden sm:flex gap-[22px] ml-auto items-center text-[13.5px] font-medium">
                   {NAV.map(([href, label]) => (
-                    <Link key={href} href={href} className="text-[var(--text-dim)] hover:text-[var(--text)]">{label}</Link>
+                    <Link key={href} href={href} className="navlink text-[var(--text-dim)] hover:text-[var(--text)]">{label}</Link>
                   ))}
                   <ThemeToggle />
                   <AuthButton />
