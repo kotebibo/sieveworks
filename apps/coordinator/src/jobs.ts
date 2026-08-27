@@ -13,6 +13,8 @@ import { registry } from "./moduleRegistry.js";
 const DEFAULT_SEEDS_PER_SEC = 3333;
 const DEFAULT_TARGET_SECONDS = 30;
 const MAX_CHUNKS_PER_JOB = 20_000;
+// Dust floor for priced bounties: 1000 lamports (0.000001 SOL) per chunk.
+const MIN_PRICE_LAMPORTS = 1000n;
 
 export const CreateJobRequest = z.object({
   title: z.string().min(1).max(200),
@@ -83,7 +85,7 @@ async function generateHoneypots(
 export async function createJob(
   req: CreateJobRequest,
   creatorWallet = "coordinator-admin"
-): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number }> {
+): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number; status: string }> {
   const workerSpecHash = req.worker_spec_hash;
   const start = BigInt(req.search_space_start);
   const end = BigInt(req.search_space_end);
@@ -96,6 +98,29 @@ export async function createJob(
       `search space needs ${chunkCount} chunks (max ${MAX_CHUNKS_PER_JOB}); shrink the space or raise target_chunk_seconds`
     );
   }
+
+  // Bounty pricing rules. Price 0 = free/volunteer bounty (no chain step).
+  // When priced: a dust floor so claims are never smaller than the tx fee to
+  // claim them, and the budget must cover the full coverage being sold — a
+  // bounty that can't pay for its own chunks is misleading.
+  const price = req.price_per_chunk_lamports;
+  const budget = req.budget_lamports;
+  if (price > 0n) {
+    if (price < MIN_PRICE_LAMPORTS) {
+      throw new Error(`price per chunk must be ≥ ${MIN_PRICE_LAMPORTS} lamports (0.000001 SOL)`);
+    }
+    if (budget < price * BigInt(chunkCount)) {
+      throw new Error(
+        `budget (${budget} lamports) must cover price × chunks (${price} × ${chunkCount} = ${price * BigInt(chunkCount)})`
+      );
+    }
+  } else if (budget > 0n) {
+    throw new Error("a budget requires a price per chunk");
+  }
+  // Priced jobs open only after the escrow is funded on-chain ('draft' →
+  // POST /v1/jobs/:id/funded verifies the escrow → 'open'). Leases only ever
+  // go to 'open' jobs, so a draft job can't be worked.
+  const status = price > 0n ? "draft" : "open";
 
   // The creator is the authenticated wallet (or coordinator-admin for the
   // token-gated admin path). Its user row must exist.
@@ -113,7 +138,7 @@ export async function createJob(
             ${workerSpecHash}, ${req.version_pin}, ${sql.json(req.params as never)},
             ${start.toString()}, ${end.toString()}, ${chunkSize.toString()}, ${req.bucket_size},
             ${req.budget_lamports.toString()}, ${req.price_per_chunk_lamports.toString()},
-            'open', ${req.lease_ttl_seconds})
+            ${status}, ${req.lease_ttl_seconds})
     returning id`;
   const jobId = job!.id;
 
@@ -132,5 +157,5 @@ export async function createJob(
 
   const honeypots = await generateHoneypots(workerSpecHash, jobId, start, end, chunkCount, req.params);
 
-  return { jobId, chunkSize, chunkCount, honeypots };
+  return { jobId, chunkSize, chunkCount, honeypots, status };
 }

@@ -24,6 +24,12 @@ const EnvSchema = z.object({
   WEB_URL: z.string().default("http://localhost:3000"),
   PORT: z.coerce.number().int().default(8080),
   WORKER_WASM_PATH: z.string().optional(),
+  // On-chain settlement (devnet). SOLANA_COORDINATOR_KEYPAIR is the JSON array
+  // form of the authority keypair (same format as solana-keygen). Unset ⇒ all
+  // chain calls no-op, so local dev without a key still works end-to-end.
+  SOLANA_RPC_URL: z.string().default("https://api.devnet.solana.com"),
+  SOLANA_CLUSTER: z.string().default("devnet"),
+  SOLANA_COORDINATOR_KEYPAIR: z.string().optional(),
 });
 
 export const env = EnvSchema.parse(process.env);

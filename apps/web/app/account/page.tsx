@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchMe, fetchNotifications, updateMe, type Me, type Notification } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, Transaction } from "@solana/web3.js";
+import { claimIx } from "@sieveworks/chain";
+import {
+  explorerTx, fetchClaimVoucher, fetchClaims, fetchMe, fetchNotifications, solStr, submitClaim, updateMe,
+  type ClaimRow, type Me, type Notification,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Mono } from "@/components/ui";
 
@@ -82,6 +88,8 @@ export default function Account() {
         </div>
       </section>
 
+      <ClaimsSection />
+
       <section className="panel mt-4">
         <div className="border-b border-[var(--border)] px-4 py-2 barlabel">Notifications</div>
         <ul className="divide-y divide-[var(--border)]">
@@ -98,5 +106,106 @@ export default function Account() {
         </ul>
       </section>
     </div>
+  );
+}
+
+/** On-chain earnings claims. The wallet signs a claim tx built from a
+ * coordinator voucher; the coordinator co-signs (its signature IS the payout
+ * authorization) and submits. Replay-safe by cumulative arithmetic on-chain. */
+function ClaimsSection() {
+  const { token, wallet } = useAuth();
+  const { connection } = useConnection();
+  const { publicKey, signTransaction } = useWallet();
+  const [claims, setClaims] = useState<ClaimRow[]>([]);
+  const [chainOn, setChainOn] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ jobId: string; ok: boolean; text: string; sig?: string } | null>(null);
+
+  const refresh = useCallback(() => {
+    if (!token) return;
+    fetchClaims(token).then((r) => { setClaims(r.claims); setChainOn(r.chain.enabled); }).catch(() => {});
+  }, [token]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const claim = async (row: ClaimRow) => {
+    if (!token || !publicKey || !signTransaction) { setMsg({ jobId: row.job_id, ok: false, text: "connect the wallet you signed in with" }); return; }
+    setBusy(row.job_id); setMsg(null);
+    try {
+      // 1. voucher: what the coordinator authorizes right now
+      const v = await fetchClaimVoucher(row.job_id, token);
+      if (v.error || !v.coordinator) throw new Error(v.error ?? "no voucher");
+      // 2. build + sign the exact claim instruction from the voucher
+      const ix = claimIx({
+        jobUuid: row.job_id, worker: publicKey, coordinator: new PublicKey(v.coordinator),
+        cumulativeLamports: BigInt(v.cumulative_lamports), nonce: BigInt(v.nonce),
+      });
+      const tx = new Transaction().add(ix);
+      tx.feePayer = publicKey;
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      const signed = await signTransaction(tx);
+      // 3. coordinator verifies byte-for-byte, co-signs, submits
+      const bytes = signed.serialize({ requireAllSignatures: false });
+      let bin = "";
+      for (const b of bytes) bin += String.fromCharCode(b);
+      const r = await submitClaim(row.job_id, btoa(bin), token);
+      if (!r.ok || !r.signature) throw new Error(r.error ?? "claim failed");
+      setMsg({ jobId: row.job_id, ok: true, text: "paid to your wallet", sig: r.signature });
+      refresh();
+    } catch (e) {
+      setMsg({ jobId: row.job_id, ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (claims.length === 0) return null;
+  return (
+    <section className="panel mt-4">
+      <div className="border-b border-[var(--border)] px-4 py-2 flex items-center justify-between">
+        <span className="barlabel">Earnings — on-chain claims</span>
+        {!chainOn && <span className="num text-[11px] text-[var(--text-faint)]">chain rail offline</span>}
+      </div>
+      <ul className="divide-y divide-[var(--border)]">
+        {claims.map((c) => {
+          const claimable = BigInt(c.cumulative_lamports) - BigInt(c.claimed_lamports);
+          return (
+            <li key={c.job_id} className="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="min-w-0 flex-1">
+                <a href={`/bounties/${c.job_id}`} className="text-[13px] font-medium hover:text-[var(--accent)]">{c.title}</a>
+                <div className="num text-[12px] text-[var(--text-dim)] mt-0.5">
+                  earned ◎{solStr(c.cumulative_lamports)} · claimed ◎{solStr(c.claimed_lamports)}
+                </div>
+              </div>
+              {claimable > 0n ? (
+                <span className="inline-flex items-center gap-2">
+                  {BigInt(c.claimed_lamports) === 0n && claimable < 1_600_000n && (
+                    <span className="num text-[11px] text-[var(--text-faint)]" title="first claim pays ~0.0015 SOL one-time account rent">below break-even</span>
+                  )}
+                  <button onClick={() => claim(c)} disabled={busy !== null || !chainOn}
+                    className="sheen font-medium text-[13px] px-4 py-2 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+                    {busy === c.job_id ? "claiming…" : `Claim ◎${solStr(claimable.toString())}`}
+                  </button>
+                </span>
+              ) : (
+                <span className="num text-xs" style={{ color: "var(--verified)" }}>✓ fully claimed</span>
+              )}
+              {msg?.jobId === c.job_id && (
+                <span className="num text-xs w-full" style={{ color: msg.ok ? "var(--verified)" : "var(--rejected)" }}>
+                  {msg.ok ? "✓" : "✕"} {msg.text}{" "}
+                  {msg.sig && <a href={explorerTx(msg.sig)} target="_blank" rel="noreferrer" className="underline">view tx ↗</a>}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="px-4 py-2.5 text-[11px] text-[var(--text-faint)] border-t border-[var(--border)]">
+        Claiming sends a transaction you sign together with the coordinator — its co-signature is the
+        payout authorization. Earnings held to a local worker key are claimable here once that key's
+        payout address is your wallet (connect your wallet on the contribute page while sieving).
+        Your first claim on a job also creates its on-chain earnings account (≈◎0.0015 one-time rent,
+        paid by you) — small claims are worth batching past that.
+      </p>
+    </section>
   );
 }

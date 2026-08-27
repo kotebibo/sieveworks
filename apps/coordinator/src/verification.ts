@@ -10,6 +10,7 @@ import type {
   SubmissionResponse,
 } from "@sieveworks/protocol";
 import type { BucketPool } from "./bucketPool.js";
+import { attestFind, chainEnabled } from "./chain.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
@@ -311,20 +312,44 @@ async function acceptResult(
         and (current_record_score is null or current_record_score < ${sub.extremum_score})
       returning id`;
     if (updated.length > 0) {
-      await sql`
+      const inserted = await sql<{ id: string }[]>`
         insert into finds (job_id, worker_id, seed, score, is_record)
         values (${ctx.jobId}, ${ctx.workerId}, ${sub.witness_seed}, ${sub.extremum_score}, true)
-        on conflict (job_id, seed) do nothing`;
+        on conflict (job_id, seed) do nothing
+        returning id`;
       events.emit("new_record", {
         job_id: ctx.jobId,
         score: sub.extremum_score,
         seed: sub.witness_seed,
       });
-      const [finder] = await sql<{ wallet_address: string }[]>`select wallet_address from users where id = ${ctx.workerId}`;
+      const [finder] = await sql<{ wallet_address: string; payout_address: string | null }[]>`
+        select wallet_address, payout_address from users where id = ${ctx.workerId}`;
       if (finder) {
         await notify(finder.wallet_address, "record_found", "You set a new record",
           `Score ${sub.extremum_score}, seed ${sub.witness_seed}. It's now the top find on this bounty.`,
           `/bounties/${ctx.jobId}`);
+      }
+      // On-chain attestation (spec §9): record_find writes job/seed/score/finder
+      // permanently. Fire-and-forget — a slow devnet must never stall the
+      // verification pipeline; on failure tx_signature stays null (the PDA is
+      // idempotent per (job, seed), so a later retry can't double-record).
+      if (inserted.length > 0 && chainEnabled()) {
+        const findId = inserted[0]!.id;
+        const finderWallet = finder?.payout_address ?? finder?.wallet_address;
+        if (finderWallet) {
+          void attestFind({
+            jobUuid: ctx.jobId,
+            seed: BigInt(sub.witness_seed),
+            score: BigInt(sub.extremum_score),
+            finder: finderWallet,
+          })
+            .then(async (sig) => {
+              if (!sig) return;
+              await sql`update finds set tx_signature = ${sig}, attested_at = now() where id = ${findId}`;
+              events.emit("find_attested", { job_id: ctx.jobId, seed: sub.witness_seed, tx_signature: sig });
+            })
+            .catch((err) => console.error(`[chain] record_find attestation failed for find ${findId}:`, err));
+        }
       }
     }
   }

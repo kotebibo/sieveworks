@@ -18,6 +18,15 @@ import { registry } from "./moduleRegistry.js";
 import { runConformanceGate } from "./conformance.js";
 import { authedWallet, completeSignIn, issueNonce, requireAuth } from "./auth.js";
 import { notify } from "./notifications.js";
+import { Transaction } from "@solana/web3.js";
+import {
+  chainEnabled,
+  coSignAndSendClaim,
+  coordinatorPubkey,
+  expectedClaimIx,
+  fetchJobEscrow,
+  getChainInfo,
+} from "./chain.js";
 
 const LeaseRequest = z.object({
   job_id: z.uuid(),
@@ -101,7 +110,156 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       chunk_size: result.chunkSize.toString(),
       chunk_count: result.chunkCount,
       honeypots: result.honeypots,
+      status: result.status,
     };
+  });
+
+  // ---- on-chain settlement (devnet) --------------------------------------
+  // What the frontend needs to build chain transactions: the program id and
+  // the coordinator authority each escrow must register.
+  app.get("/v1/chain", async () => getChainInfo());
+
+  // Funder reports their initialize_job landed. We don't trust the report:
+  // we fetch the escrow PDA from the chain and check funder/budget/price/
+  // coordinator against our own job row before opening the job.
+  app.post("/v1/jobs/:id/funded", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    const { id } = req.params as { id: string };
+    const { signature } = (req.body ?? {}) as { signature?: string };
+    if (!signature) return reply.code(400).send({ error: "signature required" });
+
+    const [job] = await sql<{ status: string; budget_lamports: string; price_per_chunk_lamports: string; creator_wallet: string }[]>`
+      select j.status, j.budget_lamports::text, j.price_per_chunk_lamports::text, u.wallet_address as creator_wallet
+      from jobs j join users u on u.id = j.creator_id where j.id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "unknown job" });
+    if (job.creator_wallet !== wallet) return reply.code(403).send({ error: "not your job" });
+    if (job.status === "open") return { ok: true, status: "open", note: "already funded" };
+    if (job.status !== "draft") return reply.code(409).send({ error: `job is ${job.status}` });
+
+    const escrow = await fetchJobEscrow(id);
+    if (!escrow) return reply.code(409).send({ error: "escrow not found on-chain yet — wait for confirmation and retry" });
+    const coordinator = coordinatorPubkey();
+    if (!coordinator || escrow.coordinator.toBase58() !== coordinator.toBase58()) {
+      return reply.code(409).send({ error: "escrow registered a different coordinator authority" });
+    }
+    if (escrow.funder.toBase58() !== wallet) {
+      return reply.code(409).send({ error: "escrow funded by a different wallet" });
+    }
+    if (escrow.budget < BigInt(job.budget_lamports) || escrow.pricePerChunk !== BigInt(job.price_per_chunk_lamports)) {
+      return reply.code(409).send({ error: "escrow budget/price does not match the job" });
+    }
+
+    await sql`update jobs set status = 'open', funding_signature = ${signature}, funded_at = now() where id = ${id}`;
+    events.emit("job_created", { job_id: id }); // job becomes visible/leasable now
+    return { ok: true, status: "open" };
+  });
+
+  // Claimable earnings for the authed wallet, per job. Earnings accrue to
+  // worker rows (local browser keys); a wallet claims the sum over every
+  // worker row it owns — its own row plus rows whose payout_address is it.
+  app.get("/v1/claims", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    const rows = await sql`
+      select e.job_id, j.title, j.status,
+             sum(e.cumulative_lamports)::text as cumulative_lamports,
+             sum(e.claimed_lamports)::text as claimed_lamports,
+             max(e.last_voucher_nonce)::text as last_nonce
+      from earnings e
+      join users u on u.id = e.worker_id
+      join jobs j on j.id = e.job_id
+      where (u.wallet_address = ${wallet} or u.payout_address = ${wallet})
+        and j.price_per_chunk_lamports > 0
+      group by e.job_id, j.title, j.status
+      order by max(e.updated_at) desc`;
+    return { claims: rows, chain: getChainInfo() };
+  });
+
+  // Voucher: what the coordinator will co-sign right now for (wallet, job).
+  // The browser builds the claim tx from exactly these numbers.
+  app.get("/v1/claims/:jobId/voucher", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    if (!chainEnabled()) return reply.code(503).send({ error: "chain rail disabled" });
+    const { jobId } = req.params as { jobId: string };
+    const [row] = await sql<{ cumulative: string }[]>`
+      select coalesce(sum(e.cumulative_lamports), 0)::text as cumulative
+      from earnings e join users u on u.id = e.worker_id
+      where e.job_id = ${jobId} and (u.wallet_address = ${wallet} or u.payout_address = ${wallet})`;
+    const cumulative = BigInt(row?.cumulative ?? "0");
+    if (cumulative <= 0n) return reply.code(400).send({ error: "nothing to claim" });
+    return {
+      job_id: jobId,
+      worker: wallet,
+      cumulative_lamports: cumulative.toString(),
+      nonce: Date.now().toString(),
+      ...getChainInfo(),
+    };
+  });
+
+  // The worker built + signed the claim tx from a voucher; we verify it is
+  // EXACTLY the instruction we'd authorize (byte-equal data, same accounts),
+  // then co-sign and submit. The program's cumulative arithmetic makes any
+  // replay pay zero, so the worst a stale voucher does is nothing.
+  app.post("/v1/claims/:jobId", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    if (!chainEnabled()) return reply.code(503).send({ error: "chain rail disabled" });
+    const { jobId } = req.params as { jobId: string };
+    const { tx: txB64 } = (req.body ?? {}) as { tx?: string };
+    if (!txB64) return reply.code(400).send({ error: "tx required (base64)" });
+
+    let tx: Transaction;
+    try {
+      tx = Transaction.from(Buffer.from(txB64, "base64"));
+    } catch {
+      return reply.code(400).send({ error: "malformed transaction" });
+    }
+    if (tx.instructions.length !== 1) return reply.code(400).send({ error: "expected exactly one instruction" });
+    const ix = tx.instructions[0]!;
+
+    // Recompute what we're willing to authorize and parse what they sent.
+    const [row] = await sql<{ cumulative: string; last_nonce: string }[]>`
+      select coalesce(sum(e.cumulative_lamports), 0)::text as cumulative,
+             coalesce(max(e.last_voucher_nonce), 0)::text as last_nonce
+      from earnings e join users u on u.id = e.worker_id
+      where e.job_id = ${jobId} and (u.wallet_address = ${wallet} or u.payout_address = ${wallet})`;
+    const maxCumulative = BigInt(row?.cumulative ?? "0");
+    const data = ix.data;
+    if (data.length !== 8 + 16 + 8 + 8) return reply.code(400).send({ error: "unexpected instruction size" });
+    const claimed = data.readBigUInt64LE(24);
+    const nonce = data.readBigUInt64LE(32);
+    if (claimed > maxCumulative) return reply.code(400).send({ error: "claim exceeds accrued earnings" });
+    if (nonce <= BigInt(row?.last_nonce ?? "0")) return reply.code(400).send({ error: "stale voucher nonce" });
+
+    // Byte-exact check against the instruction we'd build ourselves — same
+    // discriminator, job id, amounts, and the same five accounts in order.
+    const expected = expectedClaimIx({ jobUuid: jobId, worker: wallet, cumulativeLamports: claimed, nonce });
+    if (!ix.programId.equals(expected.programId) || Buffer.compare(data, expected.data) !== 0) {
+      return reply.code(400).send({ error: "instruction does not match voucher" });
+    }
+    if (ix.keys.length !== expected.keys.length ||
+        !ix.keys.every((k, i) => k.pubkey.equals(expected.keys[i]!.pubkey)
+          && k.isSigner === expected.keys[i]!.isSigner && k.isWritable === expected.keys[i]!.isWritable)) {
+      return reply.code(400).send({ error: "accounts do not match voucher" });
+    }
+    if (!tx.feePayer?.equals(expected.keys[0]!.pubkey)) return reply.code(400).send({ error: "fee payer must be the worker" });
+
+    try {
+      const sig = await coSignAndSendClaim(Buffer.from(txB64, "base64"));
+      await sql`
+        update earnings e set claimed_lamports = e.cumulative_lamports,
+                              last_voucher_nonce = ${nonce.toString()},
+                              last_voucher_sig = ${sig},
+                              updated_at = now()
+        from users u
+        where u.id = e.worker_id and e.job_id = ${jobId}
+          and (u.wallet_address = ${wallet} or u.payout_address = ${wallet})`;
+      return { ok: true, signature: sig };
+    } catch (err) {
+      return reply.code(502).send({ error: `claim failed on-chain: ${String(err)}` });
+    }
   });
 
   // admin alias (kept for scripts) — same handler, token-gated
@@ -244,7 +402,10 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
 
   app.get("/v1/jobs/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const [job] = await sql`select * from jobs where id = ${id}`;
+    const [job] = await sql`
+      select j.*, u.wallet_address as creator_wallet
+      from jobs j join users u on u.id = j.creator_id
+      where j.id = ${id}`;
     if (!job) return reply.code(404).send({ error: "not found" });
     const states = await sql`
       select state, count(*)::int as n from chunks where job_id = ${id} group by state`;

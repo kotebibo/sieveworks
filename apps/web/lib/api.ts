@@ -180,17 +180,78 @@ export interface CreateJobBody {
   search_space_start: string;
   search_space_end: string;
   seeds_per_sec?: number;
-  budget_lamports?: number;
-  price_per_chunk_lamports?: number;
+  budget_lamports?: string;
+  price_per_chunk_lamports?: string;
 }
 
-export async function createJobReq(body: CreateJobBody, token: string): Promise<{ job_id?: string; error?: unknown }> {
+export async function createJobReq(
+  body: CreateJobBody,
+  token: string
+): Promise<{ job_id?: string; status?: string; error?: unknown }> {
   const res = await fetch(`${COORDINATOR_URL}/v1/jobs`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
-  return (await res.json()) as { job_id?: string; error?: unknown };
+  return (await res.json()) as { job_id?: string; status?: string; error?: unknown };
+}
+
+// ---- on-chain settlement (devnet) ----
+export interface ChainInfo {
+  enabled: boolean;
+  cluster: string;
+  program_id: string;
+  coordinator: string | null;
+}
+export const fetchChainInfo = () => get<ChainInfo>("/v1/chain");
+
+export async function notifyFunded(jobId: string, signature: string, token: string): Promise<{ ok?: boolean; status?: string; error?: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}/funded`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ signature }),
+  });
+  return (await res.json()) as { ok?: boolean; status?: string; error?: string };
+}
+
+export interface ClaimRow {
+  job_id: string;
+  title: string;
+  status: string;
+  cumulative_lamports: string;
+  claimed_lamports: string;
+  last_nonce: string;
+}
+export async function fetchClaims(token: string): Promise<{ claims: ClaimRow[]; chain: ChainInfo }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/claims`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw new Error("unauthorized");
+  return (await res.json()) as { claims: ClaimRow[]; chain: ChainInfo };
+}
+export interface ClaimVoucher {
+  job_id: string;
+  worker: string;
+  cumulative_lamports: string;
+  nonce: string;
+  coordinator: string | null;
+  program_id: string;
+  error?: string;
+}
+export async function fetchClaimVoucher(jobId: string, token: string): Promise<ClaimVoucher> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/claims/${jobId}/voucher`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  return (await res.json()) as ClaimVoucher;
+}
+export async function submitClaim(jobId: string, txB64: string, token: string): Promise<{ ok?: boolean; signature?: string; error?: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/claims/${jobId}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tx: txB64 }),
+  });
+  return (await res.json()) as { ok?: boolean; signature?: string; error?: string };
+}
+
+/** Solana explorer link for the configured cluster. */
+export function explorerTx(sig: string): string {
+  return `https://explorer.solana.com/tx/${sig}?cluster=devnet`;
 }
 
 export const fetchWorker = (wallet: string) =>
@@ -201,7 +262,10 @@ export const fetchWorker = (wallet: string) =>
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 export function solStr(lamports: string | number): string {
   const v = Number(lamports) / LAMPORTS_PER_SOL;
-  return v === 0 ? "0" : v < 0.001 ? v.toExponential(2) : v.toFixed(4);
+  if (v === 0) return "0";
+  if (v < 0.000001) return v.toExponential(2);
+  // fixed notation with trailing zeros trimmed: 0.0001, 0.002, 1.5
+  return parseFloat(v.toFixed(6)).toString();
 }
 
 /** Subscribe to coordinator SSE. Returns an unsubscribe function. Fires

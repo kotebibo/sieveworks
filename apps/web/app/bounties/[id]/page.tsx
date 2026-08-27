@@ -1,11 +1,18 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, Transaction } from "@solana/web3.js";
+import { initializeJobIx } from "@sieveworks/chain";
 import {
+  explorerTx,
+  fetchChainInfo,
   fetchJob,
   fetchJobResults,
   fetchJobSwarm,
+  notifyFunded,
   resultsCsvUrl,
+  solStr,
   subscribeEvents,
   type JobDetail,
   type RecentResult,
@@ -13,6 +20,7 @@ import {
 import { Badge, Button, LiveNum, Mono, Progress, Skeleton, fmt } from "@/components/ui";
 import { Panel } from "@/components/console";
 import { Sieve } from "@/components/Sieve";
+import { useAuth } from "@/lib/auth";
 
 export default function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -50,9 +58,19 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
     null
   );
   const order = ["pending", "leased", "submitted", "verifying", "challenged", "accepted", "rejected"];
+  const priced = BigInt(String(detail.job.price_per_chunk_lamports ?? "0")) > 0n;
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-3">
+      {String(detail.job.status) === "draft" && priced && <FundingBanner detail={detail} id={id} />}
+      {priced && detail.job.funding_signature != null && (
+        <div className="panel px-4 py-2.5 num text-xs flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span style={{ color: "var(--verified)" }}>✓ escrow funded</span>
+          <span className="text-[var(--text-dim)]">◎{solStr(String(detail.job.budget_lamports))} locked · ◎{solStr(String(detail.job.price_per_chunk_lamports))}/chunk</span>
+          <a href={explorerTx(String(detail.job.funding_signature))} target="_blank" rel="noreferrer"
+            className="text-[var(--text-dim)] underline hover:text-[var(--accent)]">funding tx ↗</a>
+        </div>
+      )}
       <div className="panel ticked px-4 py-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-xl font-bold tracking-tight">{String(detail.job.title)}</h1>
@@ -128,6 +146,62 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
           {results.length === 0 && <p className="px-4 py-3 text-xs text-[var(--text-faint)]">no results yet</p>}
         </div>
       </Panel>
+    </div>
+  );
+}
+
+/** Shown while a priced job is 'draft': the escrow hasn't been funded yet.
+ * Only the creator sees the action; anyone else sees the state. */
+function FundingBanner({ detail, id }: { detail: JobDetail; id: string }) {
+  const { wallet, token } = useAuth();
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const isCreator = wallet != null && wallet === String(detail.job.creator_wallet);
+  const budget = BigInt(String(detail.job.budget_lamports ?? "0"));
+  const price = BigInt(String(detail.job.price_per_chunk_lamports ?? "0"));
+
+  async function fund() {
+    if (!publicKey || !token) { setErr("connect the funding wallet and sign in"); return; }
+    setBusy(true); setErr(null);
+    try {
+      const chain = await fetchChainInfo();
+      if (!chain.coordinator) throw new Error("coordinator authority unavailable");
+      const ix = initializeJobIx({
+        jobUuid: id, funder: publicKey, coordinator: new PublicKey(chain.coordinator),
+        budgetLamports: budget, pricePerChunkLamports: price,
+      });
+      const sig = await sendTransaction(new Transaction().add(ix), connection);
+      const bh = await connection.getLatestBlockhash();
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+      const r = await notifyFunded(id, sig, token);
+      if (!r.ok) throw new Error(r.error ?? "verification failed");
+      // job flips to open; the SSE refresh will re-render
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel ticked px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2"
+      style={{ borderColor: "var(--accent)" }}>
+      <span className="barlabel" style={{ color: "var(--accent)" }}>awaiting funding</span>
+      <span className="text-[13px] text-[var(--text-dim)]">
+        This bounty opens once ◎{solStr(budget.toString())} is locked in its on-chain escrow
+        (◎{solStr(price.toString())}/verified chunk).
+      </span>
+      {isCreator ? (
+        <button onClick={fund} disabled={busy}
+          className="sheen font-medium text-[13px] px-4 py-2 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+          {busy ? "confirming…" : `Fund ◎${solStr(budget.toString())}`}
+        </button>
+      ) : (
+        <span className="text-xs text-[var(--text-faint)]">waiting on the funder</span>
+      )}
+      {err && <span className="num text-xs" style={{ color: "var(--rejected)" }}>✕ {err}</span>}
     </div>
   );
 }

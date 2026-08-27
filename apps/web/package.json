@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sieveworks/chain": "workspace:*",
     "@sieveworks/merkle": "workspace:*",
     "@sieveworks/protocol": "workspace:*",
     "@sieveworks/wasm-runtime": "workspace:*",

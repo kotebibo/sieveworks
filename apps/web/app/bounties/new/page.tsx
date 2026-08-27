@@ -2,12 +2,26 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { createJobReq, fetchSpecs, type WorkerSpec } from "@/lib/api";
-import { fmt } from "@/components/ui";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, Transaction } from "@solana/web3.js";
+import { initializeJobIx } from "@sieveworks/chain";
+import { createJobReq, fetchChainInfo, fetchSpecs, notifyFunded, solStr, type ChainInfo, type WorkerSpec } from "@/lib/api";
+import { Mono, fmt } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 
 const SEED_SPACE = 281_474_976_710_656; // 2^48 reference
 const BROWSER_SEEDS_PER_SEC = 5000;
+const LAMPORTS = 1_000_000_000;
+
+/** Mirror of the coordinator's deriveChunkSize (jobs.ts): ~30s of work at the
+ * assumed rate, rounded UP to whole 1024-seed buckets. The form must compute
+ * the SAME chunk count the coordinator will, because budget = price × chunks
+ * is validated server-side — an estimate that's one chunk short would bounce. */
+function chunkMath(space: number, seedsPerSec: number): { chunkSize: number; chunks: number } {
+  const targetSeeds = 30 * seedsPerSec;
+  const chunkSize = Math.ceil(targetSeeds / 1024) * 1024;
+  return { chunkSize, chunks: Math.max(0, Math.ceil(space / chunkSize)) };
+}
 
 function NewBountyInner() {
   const params = useSearchParams();
@@ -22,7 +36,20 @@ function NewBountyInner() {
   const [seedsPerSec, setSeedsPerSec] = useState(3333);
   const [swarm, setSwarm] = useState(20);
   const [posting, setPosting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "creating" | "funding" | "confirming">("idle");
   const [error, setError] = useState<string | null>(null);
+  // on-chain funding
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
+  const [priceSol, setPriceSol] = useState("0.0001");
+  const [chain, setChain] = useState<ChainInfo | null>(null);
+  const [balance, setBalance] = useState<number | null>(null);
+
+  useEffect(() => { fetchChainInfo().then(setChain).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!publicKey) { setBalance(null); return; }
+    connection.getBalance(publicKey).then(setBalance).catch(() => setBalance(null));
+  }, [publicKey, connection]);
 
   useEffect(() => {
     fetchSpecs().then((r) => {
@@ -47,13 +74,20 @@ function NewBountyInner() {
   const space = Math.max(0, Number(spaceEnd) - Number(spaceStart));
 
   const econ = useMemo(() => {
-    const chunkSeeds = 100_000;
-    const chunks = Math.ceil(space / chunkSeeds);
+    const { chunks } = chunkMath(space, seedsPerSec);
     const coverage = (space / SEED_SPACE) * 100;
     const totalRate = swarm * BROWSER_SEEDS_PER_SEC;
     const durationSec = totalRate > 0 ? space / totalRate : 0;
-    return { chunks, coverage, durationSec };
-  }, [space, swarm]);
+    // priced bounty economics — full coverage is funded up front
+    const priceLamports = Math.round((Number(priceSol) || 0) * LAMPORTS);
+    const budgetLamports = priceLamports > 0 ? BigInt(priceLamports) * BigInt(chunks) : 0n;
+    return { chunks, coverage, durationSec, priceLamports, budgetLamports };
+  }, [space, swarm, seedsPerSec, priceSol]);
+
+  const priced = econ.priceLamports > 0;
+  // budget + escrow rent (~0.0017) + tx fee margin
+  const lamportsNeeded = priced ? econ.budgetLamports + 3_000_000n : 0n;
+  const insufficient = priced && balance !== null && BigInt(balance) < lamportsNeeded;
 
   const durationLabel = econ.durationSec < 90 ? `${Math.round(econ.durationSec)}s`
     : econ.durationSec < 5400 ? `${Math.round(econ.durationSec / 60)}m`
@@ -62,9 +96,14 @@ function NewBountyInner() {
   async function post() {
     setError(null);
     if (!token) { setError("sign in first"); return; }
+    if (priced && (!publicKey || !chain?.coordinator)) {
+      setError(!publicKey ? "connect your wallet to fund the bounty" : "coordinator chain authority unavailable");
+      return;
+    }
     let parsed: Record<string, unknown>;
     try { parsed = JSON.parse(paramsJson); } catch { setError("params must be valid JSON"); return; }
     setPosting(true);
+    setPhase("creating");
     const r = await createJobReq({
       title: title || `${spec?.name} search`,
       worker_spec_hash: specHash,
@@ -73,10 +112,45 @@ function NewBountyInner() {
       search_space_start: spaceStart,
       search_space_end: spaceEnd,
       seeds_per_sec: seedsPerSec,
+      price_per_chunk_lamports: String(econ.priceLamports),
+      budget_lamports: econ.budgetLamports.toString(),
     }, token);
-    setPosting(false);
-    if (r.job_id) router.push(`/bounties/${r.job_id}`);
-    else setError(typeof r.error === "string" ? r.error : "failed to post");
+    if (!r.job_id) {
+      setPosting(false); setPhase("idle");
+      setError(typeof r.error === "string" ? r.error : "failed to post");
+      return;
+    }
+    if (!priced || r.status !== "draft") {
+      setPosting(false);
+      router.push(`/bounties/${r.job_id}`);
+      return;
+    }
+
+    // Fund the escrow: the wallet popup the user approves IS initialize_job —
+    // it moves the budget from their wallet into the job's escrow PDA and
+    // registers the coordinator as the only key that can authorize payouts.
+    try {
+      setPhase("funding");
+      const ix = initializeJobIx({
+        jobUuid: r.job_id,
+        funder: publicKey!,
+        coordinator: new PublicKey(chain!.coordinator!),
+        budgetLamports: econ.budgetLamports,
+        pricePerChunkLamports: BigInt(econ.priceLamports),
+      });
+      const sig = await sendTransaction(new Transaction().add(ix), connection);
+      setPhase("confirming");
+      const bh = await connection.getLatestBlockhash();
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+      const funded = await notifyFunded(r.job_id, sig, token);
+      if (!funded.ok) throw new Error(funded.error ?? "coordinator could not verify the escrow");
+      router.push(`/bounties/${r.job_id}`);
+    } catch (e) {
+      setPosting(false); setPhase("idle");
+      setError(`bounty created but not funded (${e instanceof Error ? e.message : String(e)}) — open it to complete funding`);
+      // leave a path to the draft job so funding can be completed there
+      setTimeout(() => router.push(`/bounties/${r.job_id}`), 2500);
+    }
   }
 
   return (
@@ -111,6 +185,32 @@ function NewBountyInner() {
             <input type="range" min={1} max={200} value={swarm} onChange={(e) => setSwarm(Number(e.target.value))}
               className="w-full accent-[var(--accent)]" />
           </Field>
+          <Field label="price per verified chunk (SOL) — 0 = free/volunteer bounty">
+            <input value={priceSol} onChange={(e) => setPriceSol(e.target.value)} inputMode="decimal"
+              className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" />
+          </Field>
+          {priced && (
+            <div className="text-xs text-[var(--text-dim)] -mt-1 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                funding from{" "}
+                {publicKey ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Mono value={publicKey.toBase58()} kind="address" />
+                    <span className="num" style={{ color: insufficient ? "var(--rejected)" : "var(--verified)" }}>
+                      ◎{balance !== null ? solStr(balance) : "…"}
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--rejected)" }}>no wallet connected</span>
+                )}
+              </div>
+              {insufficient && (
+                <div style={{ color: "var(--rejected)" }}>
+                  needs ◎{solStr(lamportsNeeded.toString())} (budget + rent + fees) — top up devnet SOL first
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="panel ticked p-4" style={{ backgroundImage: "radial-gradient(var(--mesh) 1px, transparent 1px)", backgroundSize: "22px 22px" }}>
@@ -119,20 +219,26 @@ function NewBountyInner() {
             <Row k="work units (chunks)" v={fmt(econ.chunks)} />
             <Row k="seeds searched" v={fmt(space)} />
             <Row k="coverage of 2⁴⁸" v={`${econ.coverage < 0.001 ? econ.coverage.toExponential(1) : econ.coverage.toFixed(4)}%`} />
-            <Row k="est. duration" v={durationLabel} accent />
+            <Row k="est. duration" v={durationLabel} />
+            <Row k="price / verified chunk" v={priced ? `◎${solStr(econ.priceLamports)}` : "free"} />
+            <Row k="total budget (locked on post)" v={priced ? `◎${solStr(econ.budgetLamports.toString())}` : "—"} accent />
           </dl>
           <p className="mt-4 text-[11px] text-[var(--text-faint)] leading-relaxed">
-            Sieveworks sells targeted search, not exhaustive: a budget buys coverage of a chosen
-            region. Payments settle on-chain (devnet); funding is enabled once the program is deployed.
+            {priced
+              ? "Posting opens your wallet to lock the budget in the job's on-chain escrow (devnet). Contributors are paid per verified chunk from it; you can reclaim whatever's unspent by closing the job."
+              : "Sieveworks sells targeted search, not exhaustive: a budget buys coverage of a chosen region. Set a price per chunk to fund this bounty on-chain (devnet)."}
           </p>
         </div>
       </div>
 
       <div className="mt-5 flex items-center gap-3">
         {authed ? (
-          <button onClick={post} disabled={posting || !specHash}
-            className="font-medium text-[14px] px-5 py-2.5 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
-            {posting ? "posting…" : "Post bounty"}
+          <button onClick={post} disabled={posting || !specHash || insufficient}
+            className="sheen font-medium text-[14px] px-5 py-2.5 text-[var(--bg)] disabled:opacity-50" style={{ background: "var(--accent)" }}>
+            {phase === "creating" ? "creating job…"
+              : phase === "funding" ? "approve in wallet…"
+              : phase === "confirming" ? "confirming on devnet…"
+              : priced ? `Post & fund ◎${solStr(econ.budgetLamports.toString())}` : "Post bounty"}
           </button>
         ) : (
           <button onClick={signIn} disabled={signingIn}
