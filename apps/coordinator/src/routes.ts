@@ -16,7 +16,7 @@ import { env } from "./env.js";
 import { judgeChallengeResponse, verifySubmission } from "./verification.js";
 import { registry } from "./moduleRegistry.js";
 import { runConformanceGate } from "./conformance.js";
-import { completeSignIn, issueNonce, requireAuth } from "./auth.js";
+import { authedWallet, completeSignIn, issueNonce, requireAuth } from "./auth.js";
 import { notify } from "./notifications.js";
 
 const LeaseRequest = z.object({
@@ -117,31 +117,69 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   });
 
   // ---- worker module registry --------------------------------------------
-  app.get("/v1/specs", async () => {
+  // Optionally authed: everyone sees public + built-in modules; a signed-in
+  // caller ALSO sees their own private modules. `mine` marks the caller's.
+  app.get("/v1/specs", async (req) => {
+    const caller = authedWallet(req);
     const specs = await sql`
       select ws.hash, ws.name, ws.description, ws.spec_version, ws.conformance,
              ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
-             ws.is_builtin, ws.publisher, ws.created_at,
+             ws.is_builtin, ws.is_private, ws.publisher, ws.created_at,
+             (ws.publisher is not null and ws.publisher = ${caller}) as mine,
              count(j.id) filter (where j.status = 'open')::int as open_jobs
       from worker_specs ws
       left join jobs j on j.worker_spec_hash = ws.hash
+      where ws.is_private = false or ws.publisher = ${caller}
       group by ws.hash
       order by ws.is_builtin desc, ws.created_at asc`;
     return { specs };
   });
 
-  // Serve any registered module's artifact by hash (workers fetch their job's
-  // module; anyone can re-hash and re-verify it).
+  // Serve a registered module's artifact by hash. Public/built-in modules are
+  // open (anyone can re-hash and re-verify). A PRIVATE module's bytes are
+  // owner-only — UNLESS a job already pins it, in which case contributors on
+  // that job must be able to fetch it to run the work.
   app.get("/v1/specs/:hash/artifact", async (req, reply) => {
     const { hash } = req.params as { hash: string };
+    const [meta] = await sql<{ is_private: boolean; publisher: string | null }[]>`
+      select is_private, publisher from worker_specs where hash = ${hash}`;
+    if (!meta) return reply.code(404).send({ error: "unknown module" });
+    if (meta.is_private) {
+      const caller = authedWallet(req);
+      const isOwner = caller !== null && caller === meta.publisher;
+      let hasJob = false;
+      if (!isOwner) {
+        const [j] = await sql<{ n: number }[]>`
+          select count(*)::int as n from jobs where worker_spec_hash = ${hash}`;
+        hasJob = (j?.n ?? 0) > 0;
+      }
+      if (!isOwner && !hasJob) return reply.code(403).send({ error: "private module" });
+    }
     try {
       const bytes = await registry.getBytes(hash);
       reply.header("content-type", "application/wasm");
-      reply.header("cache-control", "public, max-age=31536000, immutable");
+      reply.header("cache-control", meta.is_private ? "private, max-age=0" : "public, max-age=31536000, immutable");
       return reply.send(Buffer.from(bytes));
     } catch {
       return reply.code(404).send({ error: "unknown module" });
     }
+  });
+
+  // Publisher toggles a module's visibility (public ↔ private). Owner-only;
+  // built-ins can't be made private.
+  app.patch("/v1/specs/:hash", async (req, reply) => {
+    const caller = requireAuth(req, reply);
+    if (!caller) return;
+    const { hash } = req.params as { hash: string };
+    const body = (req.body ?? {}) as { is_private?: boolean };
+    if (typeof body.is_private !== "boolean") return reply.code(400).send({ error: "is_private (boolean) required" });
+    const [row] = await sql<{ publisher: string | null; is_builtin: boolean }[]>`
+      select publisher, is_builtin from worker_specs where hash = ${hash}`;
+    if (!row) return reply.code(404).send({ error: "unknown module" });
+    if (row.is_builtin) return reply.code(403).send({ error: "built-in modules are public" });
+    if (row.publisher !== caller) return reply.code(403).send({ error: "not your module" });
+    await sql`update worker_specs set is_private = ${body.is_private} where hash = ${hash}`;
+    return { ok: true, hash, is_private: body.is_private };
   });
 
   // Upload a module → run the conformance gate → register on pass. This is the
@@ -152,12 +190,13 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (!publisher) return;
     const parts = req.parts();
     let wasm: Buffer | null = null;
-    let name = "", description = "", exampleParams = "{}";
+    let name = "", description = "", exampleParams = "{}", isPrivate = false;
     for await (const part of parts) {
       if (part.type === "file") wasm = await part.toBuffer();
       else if (part.fieldname === "name") name = String(part.value).slice(0, 120);
       else if (part.fieldname === "description") description = String(part.value).slice(0, 2000);
       else if (part.fieldname === "example_params") exampleParams = String(part.value).slice(0, 4000);
+      else if (part.fieldname === "visibility") isPrivate = String(part.value) === "private";
     }
     if (!wasm || wasm.length === 0) return reply.code(400).send({ error: "no .wasm file" });
     if (wasm.length > 8 * 1024 * 1024) return reply.code(400).send({ error: "module too large (8MB max)" });
@@ -178,14 +217,14 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return reply.code(200).send({ ok: true, hash: verdict.hash, spec_version: verdict.spec_version, note: "already registered by another publisher; metadata unchanged" });
     }
     await sql`
-      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, publisher)
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher)
       values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
               ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
-              ${sql.json(params as never)}, false, ${publisher})
-      on conflict (hash) do update set name = excluded.name, description = excluded.description, publisher = ${publisher}`;
-    await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is live.`, "/modules");
+              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher})
+      on conflict (hash) do update set name = excluded.name, description = excluded.description, is_private = ${isPrivate}, publisher = ${publisher}`;
+    await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is ${isPrivate ? "private (visible only to you)" : "live"}.`, "/modules");
     events.emit("spec_registered", { hash: verdict.hash, name });
-    return { ok: true, hash: verdict.hash, spec_version: verdict.spec_version, conformance: verdict };
+    return { ok: true, hash: verdict.hash, spec_version: verdict.spec_version, is_private: isPrivate, conformance: verdict };
   });
 
   // ---- public reads ------------------------------------------------------

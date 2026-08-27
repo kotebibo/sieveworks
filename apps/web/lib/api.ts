@@ -91,17 +91,38 @@ export interface WorkerSpec {
   default_range_start: string | null;
   default_range_end: string | null;
   is_builtin: boolean;
+  is_private: boolean;
+  mine: boolean;
   publisher: string | null;
   open_jobs: number;
 }
 
-export const fetchSpecs = () => get<{ specs: WorkerSpec[] }>("/v1/specs");
+// Optionally authed: pass the session token to include your own private modules.
+export async function fetchSpecs(token?: string | null): Promise<{ specs: WorkerSpec[] }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/specs`, {
+    cache: "no-store",
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) throw new Error(`/v1/specs → ${res.status}`);
+  return (await res.json()) as { specs: WorkerSpec[] };
+}
 export const specArtifactUrl = (hash: string) => `${COORDINATOR_URL}/v1/specs/${hash}/artifact`;
+
+// Publisher flips a module public ↔ private.
+export async function setSpecVisibility(hash: string, isPrivate: boolean, token: string): Promise<{ ok: boolean; is_private?: boolean; error?: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/specs/${hash}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ is_private: isPrivate }),
+  });
+  return (await res.json()) as { ok: boolean; is_private?: boolean; error?: string };
+}
 
 export interface UploadResult {
   ok: boolean;
   hash?: string;
   spec_version?: string;
+  is_private?: boolean;
   reason?: string;
 }
 

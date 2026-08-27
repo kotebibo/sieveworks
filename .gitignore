@@ -13,3 +13,7 @@ target/
 .anchor/
 test-ledger/
 packages/worker-core/out/
+# agent/editor tooling (impeccable, codex, cursor) — not project code
+.codex/
+.cursor/
+.agents/
