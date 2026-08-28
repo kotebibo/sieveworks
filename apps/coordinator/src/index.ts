@@ -11,7 +11,12 @@ import { startSweeper } from "./sweeper.js";
 
 const app = Fastify({ logger: true, bodyLimit: 8 * 1024 * 1024 });
 await app.register(cors, { origin: true });
-await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
+// Sized for a real browser worker at full tilt: a fast module (hashgrind) on
+// ~12 threads leases+submits every couple of seconds ≈ 700+ req/min from ONE
+// honest IP. 120/min throttled legitimate contributions into 429 stalls that
+// looked like "contributions not recognized" (2026-08-28). Still a per-IP
+// flood cap — protocol correctness is enforced by signatures, not this.
+await app.register(rateLimit, { max: 1000, timeWindow: "1 minute" });
 await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024 } });
 
 // Seed the built-in worker modules into the registry, then verify one loads.
