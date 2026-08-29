@@ -46,18 +46,18 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-[1180px] px-5 sm:px-7">
       {/* ---------- hero (fullscreen) ---------- */}
-      <section className="min-h-[calc(100svh-58px)] flex flex-col justify-center py-10">
-        <div className="grid grid-cols-1 gap-10 lg:gap-14 lg:grid-cols-[1.02fr_1fr] items-center">
+      <section className="min-h-[calc(100svh-58px)] flex flex-col pt-10">
+        <div className="flex-1 flex items-center">
+        <div className="grid grid-cols-1 gap-10 lg:gap-14 lg:grid-cols-[1.02fr_1fr] items-center w-full">
           <div>
-            <h1 className="reveal font-display font-extrabold leading-[0.98] tracking-[-0.035em] text-[clamp(38px,5.1vw,62px)]">
+            <h1 className="reveal font-display font-extrabold leading-[1.08] tracking-[-0.035em] text-[clamp(44px,6.2vw,80px)]">
               Pay strangers<br />to compute.<br /><span className="font-medium text-[var(--accent)]">Prove they did.</span>
             </h1>
-            <p className="reveal mt-5 text-[16.5px] text-[var(--text-dim)] max-w-[44ch]" style={{ animationDelay: "0.14s" }}>
-              Verifiable distributed compute, starting with the hardest case: search. Contributors run
-              chunks in a browser tab and get paid per verified chunk. Every result carries a witness
-              re-checked in microseconds:{" "}
-              <strong className="text-[var(--text)] font-medium">proving the work costs under 1%</strong> of
-              doing it, not the 200% you pay to run everything three times.
+            <p className="reveal mt-6 text-[17px] text-[var(--text-dim)] max-w-[46ch]" style={{ animationDelay: "0.14s" }}>
+              Verifiable distributed compute, starting with the hardest case: search. Strangers run
+              chunks in a browser tab, paid per verified chunk.{" "}
+              <strong className="text-[var(--text)] font-medium">Proving the work costs under 1%</strong>,
+              not the 200% of running it three times.
             </p>
             <div className="reveal mt-7 flex gap-3 flex-wrap" style={{ animationDelay: "0.22s" }}>
               <Link href="/contribute" className="sheen font-medium text-[14px] px-5 py-[11px] text-[var(--bg)] transition-[filter] hover:brightness-110" style={{ background: "var(--accent)" }}>
@@ -104,9 +104,10 @@ export default function Home() {
             </div>
           </div>
         </div>
+        </div>
 
-        {/* full-width stat band — clearly separated from the sieve grid */}
-        <div className="reveal-fade mt-14 sm:mt-20 pt-6 border-t border-[var(--border)] grid grid-cols-2 sm:grid-cols-4" style={{ animationDelay: "0.44s" }}>
+        {/* full-width stat band pinned to the bottom of the fullscreen hero */}
+        <div className="reveal-fade mt-10 pb-8 pt-6 border-t border-[var(--border)] grid grid-cols-2 sm:grid-cols-4" style={{ animationDelay: "0.44s" }}>
           <HeroStat n={stats ? Number(stats.chunks_accepted) : 0} l="Chunks verified" />
           <HeroStat n={stats ? Number(stats.contributors) : 0} l="Contributors" />
           <HeroStat n={stats ? Number(stats.seeds_evaluated) : 0} l="Seeds total" />
