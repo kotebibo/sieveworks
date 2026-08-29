@@ -26,17 +26,22 @@ export default function Modules() {
 
   return (
     <div className="mx-auto max-w-[1000px] px-5 sm:px-7 py-12">
-      <div className="barlabel mb-4" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>Community module registry</div>
       <h1 className="font-display font-extrabold text-[clamp(28px,3.6vw,40px)] leading-[1.04] tracking-[-0.03em]">
         Bring your own search.
       </h1>
       <p className="mt-3 text-[15.5px] text-[var(--text-dim)] max-w-[62ch]">
-        Sieveworks doesn't know what Minecraft is. A worker is any WebAssembly module exporting three
-        functions — <span className="num text-[var(--text)]">evaluate_range</span>,{" "}
+        A worker module defines what a search means: how to score one candidate in a numeric space.
+        It's any WebAssembly module exporting three functions:{" "}
+        <span className="num text-[var(--text)]">evaluate_range</span>,{" "}
         <span className="num text-[var(--text)]">evaluate_seed</span>,{" "}
         <span className="num text-[var(--text)]">spec_version</span>. Upload one and the coordinator
         content-hashes it, runs a conformance gate, and it's ready to fund bounties against. Publish it
-        for the community, or keep it <span className="text-[var(--text)]">private</span> — visible only to you until you post a bounty with it.
+        for the community, or keep it <span className="text-[var(--text)]">private</span>: visible only to you until you post a bounty with it.
+      </p>
+      <p className="mt-2.5 text-[13.5px] text-[var(--text-faint)] max-w-[62ch]">
+        Work is dealt out in <span className="text-[var(--text-dim)]">chunks</span>: a chunk is a unit
+        of compute, a fixed range of candidates one contributor evaluates and gets paid for. Nothing
+        game-specific about it.
       </p>
 
       <UploadPanel onDone={refresh} />

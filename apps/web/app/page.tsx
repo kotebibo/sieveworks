@@ -165,8 +165,9 @@ export default function Home() {
         <div className="max-w-[60ch] mb-10">
           <h2 className="font-display font-bold text-[clamp(26px,3.2vw,36px)] leading-[1.06] tracking-[-0.028em]">What happens to a chunk</h2>
           <p className="mt-3.5 text-[16px] text-[var(--text-dim)]">
-            Four layers, every chunk, not just the interesting ones. Under-reporting and
-            over-reporting are caught from opposite directions.
+            A chunk is a unit of compute: the fixed range of candidates one contributor evaluates.
+            Four verification layers touch every chunk, not just the interesting ones. Under-reporting
+            and over-reporting are caught from opposite directions.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-t border-l border-[var(--border)]">
