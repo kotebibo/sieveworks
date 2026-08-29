@@ -18,11 +18,11 @@ const sans = Public_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], va
 const mono = Spline_Sans_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://sieveworks.vercel.app"),
-  title: { default: "Sieveworks — verifiable distributed search", template: "%s · Sieveworks" },
+  metadataBase: new URL("https://sievework.com"),
+  title: { default: "Sieveworks · verifiable distributed compute", template: "%s · Sieveworks" },
   description:
-    "Pay strangers to search. Prove they did. Fund a brute-force search; contributors run chunks in the browser and get paid per verified chunk on Solana — proving the work costs under 1% of doing it.",
-  openGraph: { title: "Sieveworks", description: "Pay strangers to search. Prove they did.", type: "website" },
+    "Verifiable distributed compute. Pay strangers to run work and prove they actually ran it: contributors run chunks in the browser, paid per verified chunk on Solana. Proving the work costs under 1% of doing it.",
+  openGraph: { title: "Sieveworks", description: "Pay strangers to compute. Prove they did.", type: "website" },
 };
 
 const NAV = [

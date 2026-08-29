@@ -49,16 +49,13 @@ export default function Home() {
       <section className="min-h-[calc(100svh-58px)] flex flex-col justify-center py-10">
         <div className="grid grid-cols-1 gap-10 lg:gap-14 lg:grid-cols-[1.02fr_1fr] items-center">
           <div>
-            <div className="reveal barlabel flex items-center gap-2.5 mb-5" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>
-              <span className="inline-block w-[22px] h-px" style={{ background: "var(--accent)" }} />
-              Verifiable distributed search
-            </div>
-            <h1 className="reveal font-display font-extrabold leading-[0.98] tracking-[-0.035em] text-[clamp(38px,5.1vw,62px)]" style={{ animationDelay: "0.06s" }}>
-              Pay strangers<br />to search.<br /><span className="italic font-medium text-[var(--accent)]">Prove they did.</span>
+            <h1 className="reveal font-display font-extrabold leading-[0.98] tracking-[-0.035em] text-[clamp(38px,5.1vw,62px)]">
+              Pay strangers<br />to compute.<br /><span className="font-medium text-[var(--accent)]">Prove they did.</span>
             </h1>
             <p className="reveal mt-5 text-[16.5px] text-[var(--text-dim)] max-w-[44ch]" style={{ animationDelay: "0.14s" }}>
-              Fund a search. Contributors run pieces of it in a browser tab and get paid per verified
-              chunk. Every result carries a witness we can re-check in microseconds — so{" "}
+              Verifiable distributed compute, starting with the hardest case: search. Contributors run
+              chunks in a browser tab and get paid per verified chunk. Every result carries a witness
+              re-checked in microseconds:{" "}
               <strong className="text-[var(--text)] font-medium">proving the work costs under 1%</strong> of
               doing it, not the 200% you pay to run everything three times.
             </p>
@@ -148,14 +145,14 @@ export default function Home() {
             <div className="barlabel mb-3.5 flex items-center gap-2" style={{ color: "var(--verified)", letterSpacing: "0.12em" }}>✓ verifiable</div>
             <div className="font-display font-bold text-[19px] tracking-[-0.02em] mb-2.5">“What's the best thing in this range?”</div>
             <p className="text-[14.5px] text-[var(--text-dim)] mb-4">
-              Now the honest answer is a specific claim with a witness attached — a seed that has to
+              Now the honest answer is a specific claim with a witness attached: a seed that has to
               actually produce the score you reported.
             </p>
             <div className="num text-[12.5px] px-3.5 py-3 border border-dashed border-[var(--border-bright)] text-[var(--text-dim)]">
               worker → <b className="text-[var(--text)] font-medium">max 47 · seed 8829371</b><br />cost to check: <b className="text-[var(--text)] font-medium">0.7ms</b>
             </div>
             <p className="text-[13px] text-[var(--text-dim)] mt-3.5">
-              There is no “nothing” left to fake, and <b className="text-[var(--text)] font-semibold">nothing to outvote</b> — results get
+              There is no “nothing” left to fake, and <b className="text-[var(--text)] font-semibold">nothing to outvote</b>. Results get
               recomputed, not polled. A thousand colluding nodes fail the same check one does.
             </p>
           </div>
@@ -173,7 +170,7 @@ export default function Home() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-t border-l border-[var(--border)]">
           <Step state="Leased" dot="var(--accent-dim)" h="A range goes out"
-            p="A contributor takes 100,000 seeds. Abandon it and the lease expires — the range goes back in the pool."
+            p="A contributor takes 100,000 seeds. Abandon it and the lease expires; the range goes back in the pool."
             cost="no install · browser tab" />
           <Step state="Submitted" dot="var(--accent)" h="A witness comes back"
             p="The best score found, the seed that produced it, and a Merkle root over every 1,024-seed bucket along the way."
