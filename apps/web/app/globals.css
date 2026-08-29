@@ -170,6 +170,9 @@ body {
   transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .navlink:hover::after { transform: scaleX(1); }
+/* current section: brass text + underline held open */
+.navlink[aria-current="page"] { color: var(--accent); }
+.navlink[aria-current="page"]::after { transform: scaleX(1); }
 
 /* Sieve cells brighten when you point at the grid — it's alive. */
 .sieve-cell { transition: fill-opacity 0.15s ease; }

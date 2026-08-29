@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/auth";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AuthButton } from "@/components/AuthButton";
 import { Wordmark } from "@/components/Wordmark";
+import { NavLinks } from "@/components/NavLinks";
 
 // Newsreader — a literary serif with optical sizing and true italics. The
 // anti-generic display voice: serif headlines against grotesque body + mono
@@ -25,13 +26,6 @@ export const metadata: Metadata = {
   openGraph: { title: "Sieveworks", description: "Pay strangers to compute. Prove they did.", type: "website" },
 };
 
-const NAV = [
-  ["/bounties", "Bounties"],
-  ["/contribute", "Contribute"],
-  ["/modules", "Modules"],
-  ["/how-it-works", "How it works"],
-  ["/docs", "Docs"],
-] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -51,9 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <span className="font-display font-extrabold text-[15px] tracking-[0.1em] uppercase">Sieveworks</span>
                 </Link>
                 <nav className="hidden sm:flex gap-[22px] ml-auto items-center text-[13.5px] font-medium">
-                  {NAV.map(([href, label]) => (
-                    <Link key={href} href={href} className="navlink text-[var(--text-dim)] hover:text-[var(--text)]">{label}</Link>
-                  ))}
+                  <NavLinks />
                   <ThemeToggle />
                   <AuthButton />
                 </nav>

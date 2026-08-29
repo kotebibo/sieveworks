@@ -1,3 +1,5 @@
+import { CopyBlock } from "@/components/CopyBlock";
+
 export default function Docs() {
   return (
     <div className="mx-auto max-w-3xl prose-invert">
@@ -36,22 +38,136 @@ export default function Docs() {
         </p>
       </Section>
 
-      <Section title="For new communities — writing a worker">
+      <Section title="Write your own module — the contract">
         <p>
-          The platform is game-agnostic. A worker is a WASM module exporting three functions:
+          A worker module defines a search: candidates are 64-bit integers ("seeds"), and your module
+          says how good each one is. It's one WebAssembly module, no dependencies on the platform,
+          exporting exactly this C-level ABI:
         </p>
-        <pre className="num text-xs bg-[var(--panel-2)] p-3 overflow-x-auto border border-[var(--border)]">{`evaluate_range(start, end, params) -> per-bucket (max_score, max_seed)
-evaluate_seed(seed, params)        -> score      // the verification primitive
-spec_version()                     -> string`}</pre>
-        <p>
-          Both must be deterministic and pure. Jobs pin your module by its sha256; the coordinator
-          verifies against that exact artifact. Minecraft is our launch vertical and reference
-          implementation — nothing in the protocol knows what Minecraft is.
+        <pre className="num text-xs bg-[var(--panel-2)] p-3 overflow-x-auto border border-[var(--border)]">{`int64_t evaluate_seed(uint64_t seed, const char* params_json, int32_t params_len);
+    // score one candidate. Higher = better. Return INT64_MIN only for bad params.
+
+int32_t evaluate_range(uint64_t start, uint64_t end,
+                       const char* params_json, int32_t params_len, uint8_t* out);
+    // scan [start, end) ASCENDING, track the max. Ties: keep the LOWEST seed.
+    // write 16 bytes to out: [0..7] int64 max_score LE, [8..15] uint64 max_seed LE.
+    // return 0 on success.
+
+const char* spec_version(void);   // static string, e.g. "myworker/0.1.0"
+// plus malloc/free (Emscripten provides them). No other imports: no I/O, ever.`}</pre>
+        <p className="mt-2">
+          The invariant everything rests on:{" "}
+          <b>evaluate_range must equal folding evaluate_seed over the same range.</b> The platform
+          verifies your claims by re-running single seeds, so the two paths must agree exactly. Params
+          arrive as a JSON string (not NUL-terminated; use the length): the job's params field,
+          verbatim.
         </p>
+      </Section>
+
+      <Section title="Determinism rules (the conformance gate enforces these)">
+        <ul className="list-disc pl-5 space-y-1.5">
+          <li>No clock, no randomness, no threads, no uninitialized memory, no I/O. Identical inputs must produce identical outputs on every machine.</li>
+          <li>Prefer integer arithmetic. If you need floats: IEEE-754 doubles only, and the build must use <span className="num">-ffp-contract=off</span> (no fused multiply-add).</li>
+          <li>Keep <span className="num">evaluate_seed</span> fast (microseconds if you can). Cheap single-seed re-checks are what make verification cost under 1%.</li>
+        </ul>
+        <p className="mt-2 text-[var(--text-dim)]">
+          On upload the gate instantiates your module in a sandbox, checks the exports, runs a range
+          twice (byte-identical or rejected), and confirms{" "}
+          <span className="num">evaluate_seed(max_seed) == max_score</span>. Pass and it's registered,
+          content-addressed by sha256; jobs pin that exact hash and the coordinator verifies with the
+          same artifact workers run.
+        </p>
+      </Section>
+
+      <Section title="Structure, build, upload">
+        <ol className="list-decimal pl-5 space-y-1.5">
+          <li><b>One self-contained C file</b> (vendor any algorithm code into it). A minimal skeleton: parse params, write <span className="num">score_one(seed)</span>, and use the standard fold loop for <span className="num">evaluate_range</span>.</li>
+          <li><b>Build with Emscripten:</b></li>
+        </ol>
+        <pre className="num text-xs bg-[var(--panel-2)] p-3 overflow-x-auto border border-[var(--border)]">{`emcc mymodule.c -O2 -ffp-contract=off -sSTANDALONE_WASM --no-entry \\
+  -sALLOW_MEMORY_GROWTH \\
+  -sEXPORTED_FUNCTIONS=_evaluate_seed,_evaluate_range,_spec_version,_malloc,_free \\
+  -o mymodule.wasm`}</pre>
+        <ol className="list-decimal pl-5 space-y-1.5 mt-2" start={3}>
+          <li><b>Sanity-test locally:</b> run the same range twice (outputs must be byte-identical) and check <span className="num">evaluate_seed(max_seed) == max_score</span> on a few random ranges.</li>
+          <li><b>Upload on the Modules page:</b> sign in with your wallet, pick a name, a description, and example params JSON, choose public or private, and submit. The conformance gate runs immediately; on pass your module is live and fundable.</li>
+        </ol>
+      </Section>
+
+      <Section title="Or let an AI write it for you">
+        <p className="mb-2">
+          Paste this prompt into any capable AI (Claude, ChatGPT, etc.), fill in the marked block with
+          your task, and you'll get a buildable module. Everything below the edit block is the exact
+          platform contract — leave it unchanged.
+        </p>
+        <CopyBlock label="sieveworks-module-prompt.txt" text={AI_PROMPT} />
       </Section>
     </div>
   );
 }
+
+const AI_PROMPT = `Build a worker module for Sieveworks (sievework.com), a verifiable distributed
+compute platform. Deliverable: ONE self-contained C file that compiles to
+WebAssembly with the exact build command below, plus a short sanity-test plan.
+
+=========== EDIT ONLY THIS BLOCK ===========
+TASK: <one sentence: what are we searching for?
+       e.g. "seeds whose sha256(seed_as_decimal_string + salt) has many leading zero bits">
+SCORING: <what makes a candidate good, as a 64-bit signed integer, higher = better;
+          define it precisely, e.g. "score = count of leading zero bits, 0..256">
+PARAMS: <the JSON keys a job will pass, e.g. {"salt": "abc"} - describe each key's
+         type and meaning; the module must parse them from a raw JSON string>
+=========== END EDIT BLOCK =================
+
+HARD CONTRACT - do not deviate from any of this:
+
+1. Candidates are uint64_t values called seeds. Scores are int64_t, higher = better.
+
+2. Export exactly these functions (C ABI, compiled with Emscripten):
+   int64_t evaluate_seed(uint64_t seed, const char* params_json, int32_t params_len);
+     - Score one seed. params_json is NOT NUL-terminated; respect params_len.
+     - Return INT64_MIN only to signal invalid params. Never for a valid seed.
+   int32_t evaluate_range(uint64_t start, uint64_t end,
+                          const char* params_json, int32_t params_len, uint8_t* out);
+     - Scan every seed in [start, end) in ASCENDING order, tracking the maximum
+       score. On ties keep the LOWEST seed.
+     - Write exactly 16 bytes to out: bytes 0-7 = int64 max_score little-endian,
+       bytes 8-15 = uint64 max_seed little-endian. Return 0 on success, nonzero on error.
+   const char* spec_version(void);
+     - Return a static NUL-terminated string like "mymodule/0.1.0".
+
+3. THE CORE INVARIANT: evaluate_range(start, end, ...) must produce exactly the
+   result of calling evaluate_seed on every seed in the range and folding with
+   (max score, lowest seed wins ties). The platform re-checks single seeds
+   against your range claims; any disagreement means the module is rejected.
+
+4. Absolute determinism: no time, no randomness, no threads, no I/O, no reads of
+   uninitialized memory, no imports beyond what Emscripten emits for malloc/free.
+   Identical inputs must give identical outputs on every machine, forever.
+
+5. Prefer pure integer arithmetic. If floating point is truly unavoidable, use
+   IEEE-754 double only, no fast-math, no fused ops (build uses -ffp-contract=off).
+
+6. Keep evaluate_seed fast - microseconds per call if possible. Vendor any
+   algorithm code (hashing etc.) directly into the file; no external libraries.
+
+7. Parse the params JSON with a small hand-rolled parser for the specific keys in
+   the PARAMS block (no JSON library). Handle missing/malformed keys by returning
+   the error values above.
+
+BUILD COMMAND (must compile cleanly with this, no modifications):
+emcc mymodule.c -O2 -ffp-contract=off -sSTANDALONE_WASM --no-entry \\
+  -sALLOW_MEMORY_GROWTH \\
+  -sEXPORTED_FUNCTIONS=_evaluate_seed,_evaluate_range,_spec_version,_malloc,_free \\
+  -o mymodule.wasm
+
+DELIVER:
+1. The complete C file.
+2. The build command above, unchanged.
+3. A sanity-test plan: run one range twice and confirm byte-identical output;
+   for 3 random ranges confirm evaluate_seed(max_seed) == max_score.
+Then upload mymodule.wasm at sievework.com/modules - the conformance gate runs
+these same checks and registers the module if they pass.`;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
