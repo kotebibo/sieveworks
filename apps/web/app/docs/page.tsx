@@ -1,11 +1,26 @@
 import { CopyBlock } from "@/components/CopyBlock";
+import { DocsNav } from "@/components/DocsNav";
+
+const TOC = [
+  { id: "idea", label: "The idea" },
+  { id: "safety", label: "Trust & safety" },
+  { id: "verification", label: "How results are verified" },
+  { id: "contract", label: "The module contract" },
+  { id: "determinism", label: "Determinism rules" },
+  { id: "build", label: "Structure, build, upload" },
+  { id: "ai", label: "Let an AI write it" },
+];
 
 export default function Docs() {
   return (
-    <div className="mx-auto max-w-3xl prose-invert">
+    <div className="mx-auto max-w-[1100px] px-5 sm:px-7 flex gap-12 items-start">
+      <aside className="hidden lg:block w-56 shrink-0 sticky top-[90px] pt-1">
+        <DocsNav items={TOC} />
+      </aside>
+      <div className="min-w-0 max-w-3xl flex-1">
       <h1 className="font-display font-extrabold text-[clamp(28px,3.4vw,38px)] tracking-[-0.025em]">How Sieveworks works</h1>
 
-      <nav className="mt-6 panel p-4">
+      <nav className="mt-6 panel p-4 lg:hidden">
         <div className="num text-[12px] text-[var(--text-faint)] mb-2.5">On this page</div>
         <ol className="grid sm:grid-cols-2 gap-x-8 gap-y-1.5 text-[14.5px] list-decimal list-inside marker:text-[var(--text-faint)]">
           <li><a href="#idea" className="text-[var(--text-dim)] hover:text-[var(--accent)]">The idea</a></li>
@@ -115,6 +130,7 @@ const char* spec_version(void);   // static string, e.g. "myworker/0.1.0"
         </p>
         <CopyBlock label="sieveworks-module-prompt.txt" text={AI_PROMPT} collapsible />
       </Section>
+      </div>
     </div>
   );
 }
