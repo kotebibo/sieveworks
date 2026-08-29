@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { fetchFinds, fetchJobResults, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats } from "@/lib/api";
+import { fetchFinds, fetchJobResults, fetchSpecs, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats, type WorkerSpec } from "@/lib/api";
+import { Wordmark } from "@/components/Wordmark";
 import { Sieve } from "@/components/Sieve";
 import { CountUp, Mono, fmt } from "@/components/ui";
 
@@ -10,6 +11,7 @@ export default function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [swarm, setSwarm] = useState<{ job_id: string | null; title: string | null; cells: string }>({ job_id: null, title: null, cells: "" });
   const [witness, setWitness] = useState<{ score: string; seed: string } | null>(null);
+  const [specs, setSpecs] = useState<WorkerSpec[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export default function Home() {
       }).catch(() => {});
     };
     refresh();
+    fetchSpecs().then((r) => setSpecs(r.specs.filter((x) => !x.is_private))).catch(() => {});
     return subscribeEvents(() => {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(refresh, 350);
@@ -186,12 +189,100 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="mt-24 border-t border-[var(--border)] py-7 mb-16">
-        <div className="num text-[12px] text-[var(--text-faint)] flex flex-wrap gap-4 items-center tracking-wide">
-          <span>SIEVEWORKS</span><span>·</span><span>Solana devnet</span><span>·</span>
-          <a href="https://github.com/konstantinesolana/sieveworks" className="hover:text-[var(--text)]">open source</a>
-          <span>·</span><Link href="/how-it-works" className="hover:text-[var(--text)]">how it works</Link>
-          <span>·</span><Link href="/docs" className="hover:text-[var(--text)]">docs</Link>
+      {/* ---------- modules: the platform story ---------- */}
+      <section className="pt-24">
+        <div className="max-w-[60ch] mb-10">
+          <h2 className="font-display font-bold text-[clamp(26px,3.2vw,36px)] leading-[1.06] tracking-[-0.028em]">Any search. Bring your own module.</h2>
+          <p className="mt-3.5 text-[16px] text-[var(--text-dim)]">
+            A worker module defines what a search means: how to score one candidate. Upload any
+            WebAssembly module with three exports and it's fundable; a conformance gate proves it's
+            deterministic before it goes live. Publish it for everyone, or keep it private.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {specs.slice(0, 4).map((m) => (
+            <Link key={m.hash} href="/modules" className="panel ticked p-4 hover:border-[var(--accent)] transition-colors">
+              <div className="font-display font-bold text-[15px] tracking-[-0.01em] leading-snug">{m.name}</div>
+              <div className="num text-[12px] text-[var(--text-dim)] mt-2.5">
+                {m.open_jobs > 0 ? `${m.open_jobs} open ${m.open_jobs === 1 ? "bounty" : "bounties"}` : "registered"}
+                <span className="text-[var(--text-faint)]"> · {m.spec_version.split("+")[0]}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+        <p className="mt-6 text-[15px] text-[var(--text-dim)] max-w-[62ch]">
+          Don't write C? The docs include a ready-made AI prompt: fill in three lines describing your
+          search, paste it into any AI, and upload what it builds.
+        </p>
+        <div className="mt-4 flex gap-3 flex-wrap">
+          <Link href="/modules" className="font-medium text-[13.5px] px-4 py-2 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)]">Browse the registry</Link>
+          <Link href="/docs#ai" className="font-medium text-[13.5px] px-4 py-2 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)]">Get the AI prompt</Link>
+        </div>
+      </section>
+
+      {/* ---------- settlement: the money story ---------- */}
+      <section className="pt-24">
+        <div className="max-w-[60ch] mb-10">
+          <h2 className="font-display font-bold text-[clamp(26px,3.2vw,36px)] leading-[1.06] tracking-[-0.028em]">The money settles on Solana</h2>
+          <p className="mt-3.5 text-[16px] text-[var(--text-dim)]">
+            Nothing here runs on promises. The budget exists on-chain before anyone works, records
+            are attributed permanently, and earnings leave the escrow only with two signatures.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-l border-[var(--border)]">
+          <Step state="Funded" dot="var(--accent)" h="Locked before work starts"
+            p="Posting a priced bounty locks the full budget in the job's escrow account. Contributors can see it's real; the funder can reclaim whatever goes unspent."
+            cost="one escrow per job, on-chain" />
+          <Step state="Attested" dot="var(--verified)" h="Records written permanently"
+            p="Every verified record is attested on-chain: job, seed, score, finder, slot. Priority no one can rewrite, credit no one can take."
+            cost="a real explorer link, per record" />
+          <Step state="Claimed" dot="var(--verified)" h="Paid from the escrow"
+            p="Workers claim accumulated earnings with a voucher co-signed by the coordinator. Replaying an old voucher pays nothing, by arithmetic."
+            cost="SOL, straight to your wallet" />
+        </div>
+        <p className="num mt-4 text-[12.5px] text-[var(--text-faint)]">
+          Live on Solana devnet ·{" "}
+          <a href="https://explorer.solana.com/address/BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf?cluster=devnet"
+            target="_blank" rel="noreferrer" className="hover:text-[var(--accent)] underline">program on the explorer</a>
+        </p>
+      </section>
+
+      {/* ---------- closing CTA ---------- */}
+      <section className="mt-28 border-t border-b border-[var(--border)] py-16 text-center">
+        <h2 className="font-display font-extrabold text-[clamp(30px,4vw,46px)] tracking-[-0.03em]">It's live. Join the swarm.</h2>
+        <p className="mt-3 text-[16px] text-[var(--text-dim)]">A browser tab is a worker. No install, no signup.</p>
+        <div className="mt-7 flex gap-3 justify-center flex-wrap">
+          <Link href="/contribute" className="sheen font-medium text-[14px] px-6 py-3 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link>
+          <Link href="/bounties" className="font-medium text-[14px] px-6 py-3 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">Post a search</Link>
+        </div>
+      </section>
+
+      {/* ---------- footer (home only) ---------- */}
+      <footer className="mt-16 mb-10">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <Wordmark />
+              <span className="font-display font-extrabold text-[15px] tracking-[0.1em] uppercase">Sieveworks</span>
+            </div>
+            <p className="mt-3 text-[13.5px] text-[var(--text-dim)] max-w-[32ch]">
+              Verifiable distributed compute. Pay strangers to run work; prove they actually ran it.
+            </p>
+          </div>
+          <FooterCol title="Product" links={[
+            ["/bounties", "Bounties"], ["/contribute", "Contribute"], ["/modules", "Modules"], ["/how-it-works", "How it works"],
+          ]} />
+          <FooterCol title="Builders" links={[
+            ["/docs", "Docs"], ["/docs#contract", "Module contract"], ["/docs#ai", "AI module prompt"],
+            ["https://github.com/konstantinesolana/sieveworks", "GitHub"],
+          ]} />
+          <FooterCol title="Network" links={[
+            ["https://explorer.solana.com/address/BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf?cluster=devnet", "Program on explorer"],
+            ["https://x.com/bibo19_", "@bibo19_ on X"],
+          ]} />
+        </div>
+        <div className="num mt-10 pt-5 border-t border-[var(--border)] text-[12px] text-[var(--text-faint)] flex flex-wrap gap-x-4 gap-y-1">
+          <span>© 2026 Sieveworks</span><span>·</span><span>Solana devnet</span><span>·</span><span>built solo, in the open</span>
         </div>
       </footer>
     </div>
@@ -205,6 +296,25 @@ function HeroStat({ v, n, l, accent }: { v?: string; n?: number; l: string; acce
         {typeof n === "number" ? <CountUp value={n} format={fmt} /> : v}
       </div>
       <div className="barlabel mt-2">{l}</div>
+    </div>
+  );
+}
+
+function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
+  return (
+    <div>
+      <div className="num text-[12px] text-[var(--text-faint)] mb-3">{title}</div>
+      <ul className="space-y-2 text-[13.5px]">
+        {links.map(([href, label]) => (
+          <li key={href}>
+            {href.startsWith("http") ? (
+              <a href={href} target="_blank" rel="noreferrer" className="text-[var(--text-dim)] hover:text-[var(--accent)]">{label}</a>
+            ) : (
+              <Link href={href} className="text-[var(--text-dim)] hover:text-[var(--accent)]">{label}</Link>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

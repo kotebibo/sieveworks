@@ -3,9 +3,22 @@ import { CopyBlock } from "@/components/CopyBlock";
 export default function Docs() {
   return (
     <div className="mx-auto max-w-3xl prose-invert">
-      <h1 className="text-lg font-semibold">How Sieveworks works</h1>
+      <h1 className="font-display font-extrabold text-[clamp(28px,3.4vw,38px)] tracking-[-0.025em]">How Sieveworks works</h1>
 
-      <Section title="The idea">
+      <nav className="mt-6 panel p-4">
+        <div className="num text-[12px] text-[var(--text-faint)] mb-2.5">On this page</div>
+        <ol className="grid sm:grid-cols-2 gap-x-8 gap-y-1.5 text-[14.5px] list-decimal list-inside marker:text-[var(--text-faint)]">
+          <li><a href="#idea" className="text-[var(--text-dim)] hover:text-[var(--accent)]">The idea</a></li>
+          <li><a href="#safety" className="text-[var(--text-dim)] hover:text-[var(--accent)]">For contributors: trust &amp; safety</a></li>
+          <li><a href="#verification" className="text-[var(--text-dim)] hover:text-[var(--accent)]">How results are verified</a></li>
+          <li><a href="#contract" className="text-[var(--text-dim)] hover:text-[var(--accent)]">Write your own module: the contract</a></li>
+          <li><a href="#determinism" className="text-[var(--text-dim)] hover:text-[var(--accent)]">Determinism rules</a></li>
+          <li><a href="#build" className="text-[var(--text-dim)] hover:text-[var(--accent)]">Structure, build, upload</a></li>
+          <li><a href="#ai" className="text-[var(--text-dim)] hover:text-[var(--accent)]">Let an AI write it for you</a></li>
+        </ol>
+      </nav>
+
+      <Section id="idea" title="The idea">
         <p>
           Sieveworks is an exchange for <b>verifiable search</b>: problems that are hard to find but
           easy to check. A funder posts a budget; contributors search chunks of the space on their
@@ -14,23 +27,23 @@ export default function Docs() {
         </p>
       </Section>
 
-      <Section title="For contributors — trust &amp; safety">
-        <ul className="list-disc pl-5 space-y-1.5">
+      <Section id="safety" title="For contributors: trust &amp; safety">
+        <ul className="list-disc pl-5 space-y-2.5">
           <li><b>Nothing is installed.</b> The browser worker runs in sandboxed WebAssembly — no filesystem, no network beyond this page, no persistence. The same sandbox that protects you on every website.</li>
           <li><b>Your keys never leave the page.</b> A local worker key is generated in your browser and signs your submissions. Connecting a wallet only registers a payout address — signing never happens inside the sandbox.</li>
           <li><b>The native CLI is reproducible.</b> Its build is content-hashed; you can rebuild and compare. Distributed via <span className="num">npx @sieveworks/worker</span> — no unsigned executable.</li>
         </ul>
       </Section>
 
-      <Section title="How results are verified (no redundant execution)">
-        <ol className="list-decimal pl-5 space-y-1.5">
+      <Section id="verification" title="How results are verified (no redundant execution)">
+        <ol className="list-decimal pl-5 space-y-2.5">
           <li><b>Extremum reframing</b> — every chunk answers "what's the best seed here, and its score?" with a witness. There is no fakeable "found nothing."</li>
           <li><b>Witness check</b> — the coordinator re-runs your witness seed in the identical WASM; the score must match exactly.</li>
           <li><b>Honeypots</b> — the coordinator secretly knows some seeds' scores; claiming below a known seed is caught.</li>
           <li><b>Merkle challenge</b> — you commit to per-bucket results with one root; the coordinator challenges random buckets and recomputes them. You can't open a bucket you never computed.</li>
           <li><b>Stake &amp; slash</b> — a small bond makes cheating negative expected value.</li>
         </ol>
-        <p className="mt-2 text-[var(--text-dim)]">
+        <p className="mt-3 text-[var(--text-dim)]">
           Verification costs under 1% of the work it checks. The coordinator verifies with the exact
           same WASM artifact workers run, pinned by content hash — worker/verifier drift is
           impossible by construction. Every decision is independently re-verifiable via the audit
@@ -38,13 +51,13 @@ export default function Docs() {
         </p>
       </Section>
 
-      <Section title="Write your own module — the contract">
+      <Section id="contract" title="Write your own module: the contract">
         <p>
           A worker module defines a search: candidates are 64-bit integers ("seeds"), and your module
           says how good each one is. It's one WebAssembly module, no dependencies on the platform,
           exporting exactly this C-level ABI:
         </p>
-        <pre className="num text-xs bg-[var(--panel-2)] p-3 overflow-x-auto border border-[var(--border)]">{`int64_t evaluate_seed(uint64_t seed, const char* params_json, int32_t params_len);
+        <pre className="num text-[13.5px] leading-[1.6] bg-[var(--panel-2)] p-4 my-3 overflow-x-auto scroll-thin border border-[var(--border)]">{`int64_t evaluate_seed(uint64_t seed, const char* params_json, int32_t params_len);
     // score one candidate. Higher = better. Return INT64_MIN only for bad params.
 
 int32_t evaluate_range(uint64_t start, uint64_t end,
@@ -55,7 +68,7 @@ int32_t evaluate_range(uint64_t start, uint64_t end,
 
 const char* spec_version(void);   // static string, e.g. "myworker/0.1.0"
 // plus malloc/free (Emscripten provides them). No other imports: no I/O, ever.`}</pre>
-        <p className="mt-2">
+        <p className="mt-3">
           The invariant everything rests on:{" "}
           <b>evaluate_range must equal folding evaluate_seed over the same range.</b> The platform
           verifies your claims by re-running single seeds, so the two paths must agree exactly. Params
@@ -64,13 +77,13 @@ const char* spec_version(void);   // static string, e.g. "myworker/0.1.0"
         </p>
       </Section>
 
-      <Section title="Determinism rules (the conformance gate enforces these)">
-        <ul className="list-disc pl-5 space-y-1.5">
+      <Section id="determinism" title="Determinism rules (the conformance gate enforces these)">
+        <ul className="list-disc pl-5 space-y-2.5">
           <li>No clock, no randomness, no threads, no uninitialized memory, no I/O. Identical inputs must produce identical outputs on every machine.</li>
           <li>Prefer integer arithmetic. If you need floats: IEEE-754 doubles only, and the build must use <span className="num">-ffp-contract=off</span> (no fused multiply-add).</li>
           <li>Keep <span className="num">evaluate_seed</span> fast (microseconds if you can). Cheap single-seed re-checks are what make verification cost under 1%.</li>
         </ul>
-        <p className="mt-2 text-[var(--text-dim)]">
+        <p className="mt-3 text-[var(--text-dim)]">
           On upload the gate instantiates your module in a sandbox, checks the exports, runs a range
           twice (byte-identical or rejected), and confirms{" "}
           <span className="num">evaluate_seed(max_seed) == max_score</span>. Pass and it's registered,
@@ -79,28 +92,28 @@ const char* spec_version(void);   // static string, e.g. "myworker/0.1.0"
         </p>
       </Section>
 
-      <Section title="Structure, build, upload">
-        <ol className="list-decimal pl-5 space-y-1.5">
+      <Section id="build" title="Structure, build, upload">
+        <ol className="list-decimal pl-5 space-y-2.5">
           <li><b>One self-contained C file</b> (vendor any algorithm code into it). A minimal skeleton: parse params, write <span className="num">score_one(seed)</span>, and use the standard fold loop for <span className="num">evaluate_range</span>.</li>
           <li><b>Build with Emscripten:</b></li>
         </ol>
-        <pre className="num text-xs bg-[var(--panel-2)] p-3 overflow-x-auto border border-[var(--border)]">{`emcc mymodule.c -O2 -ffp-contract=off -sSTANDALONE_WASM --no-entry \\
+        <pre className="num text-[13.5px] leading-[1.6] bg-[var(--panel-2)] p-4 my-3 overflow-x-auto scroll-thin border border-[var(--border)]">{`emcc mymodule.c -O2 -ffp-contract=off -sSTANDALONE_WASM --no-entry \\
   -sALLOW_MEMORY_GROWTH \\
   -sEXPORTED_FUNCTIONS=_evaluate_seed,_evaluate_range,_spec_version,_malloc,_free \\
   -o mymodule.wasm`}</pre>
-        <ol className="list-decimal pl-5 space-y-1.5 mt-2" start={3}>
+        <ol className="list-decimal pl-5 space-y-2.5 mt-2" start={3}>
           <li><b>Sanity-test locally:</b> run the same range twice (outputs must be byte-identical) and check <span className="num">evaluate_seed(max_seed) == max_score</span> on a few random ranges.</li>
           <li><b>Upload on the Modules page:</b> sign in with your wallet, pick a name, a description, and example params JSON, choose public or private, and submit. The conformance gate runs immediately; on pass your module is live and fundable.</li>
         </ol>
       </Section>
 
-      <Section title="Or let an AI write it for you">
+      <Section id="ai" title="Or let an AI write it for you">
         <p className="mb-2">
           Paste this prompt into any capable AI (Claude, ChatGPT, etc.), fill in the marked block with
           your task, and you'll get a buildable module. Everything below the edit block is the exact
           platform contract — leave it unchanged.
         </p>
-        <CopyBlock label="sieveworks-module-prompt.txt" text={AI_PROMPT} />
+        <CopyBlock label="sieveworks-module-prompt.txt" text={AI_PROMPT} collapsible />
       </Section>
     </div>
   );
@@ -169,10 +182,12 @@ DELIVER:
 Then upload mymodule.wasm at sievework.com/modules - the conformance gate runs
 these same checks and registers the module if they pass.`;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-6 text-sm leading-relaxed text-[var(--text)]">
-      <h2 className="text-[11px] uppercase tracking-wider text-[var(--accent)] mb-2">{title}</h2>
+    <section id={id} className="mt-14 scroll-mt-20 text-[15.5px] leading-[1.7] text-[var(--text)]">
+      <h2 className="font-display font-bold text-[21px] tracking-[-0.015em] mb-4">
+        <a href={`#${id}`} className="hover:text-[var(--accent)]">{title}</a>
+      </h2>
       {children}
     </section>
   );
