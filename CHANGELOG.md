@@ -3,6 +3,16 @@
 All Crypto World's Fair work (Sep 14 – Oct 12, 2026) is logged here, newest
 first.
 
+## 2026-09-11 (night, later) — The prize money loop closes on devnet
+
+The E2E prize bounty settled itself: the sweeper awarded the winner at the
+deadline; the winner claimed 0.005 SOL from the escrow through the standard
+co-signed voucher (tx p2wNUsrB…); the funder reclaimed the escrow remainder
+through the UPGRADED close_job (tx 5APBRckw…) — which required the
+coordinator's co-signature and correctly refused until the winner had been
+paid. Fund → compete → verify → award → claim → reclaim, all real
+transactions, no manual steps.
+
 ## 2026-09-11 (night) — Paid-per-generation training verified on prod
 
 The third verification mode: workers are paid per chunk of TRAINING WORK
