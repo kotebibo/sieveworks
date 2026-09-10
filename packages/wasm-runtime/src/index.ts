@@ -35,6 +35,11 @@ interface WorkerExports {
     outPtr: number,
     outCap: number
   ) => number;
+  // candidate ABI (prize bounties — orthogonal to mode; capability derived
+  // from export presence)
+  evaluate_candidate?: (candPtr: number, candLen: number, paramsPtr: number, paramsLen: number) => bigint;
+  candidate_max_len?: () => number;
+  trace_candidate?: (candPtr: number, candLen: number, paramsPtr: number, paramsLen: number, outPtr: number, outCap: number) => number;
   // mode discriminator — optional; absent = 0 = witness_extremum, so every
   // pre-mode artifact keeps its hash and meaning
   verification_mode?: () => number;
@@ -49,9 +54,12 @@ const MODE_BY_CODE: Record<number, WasmVerificationMode> = {
   2: "training",
 };
 
-/** Exports each mode must provide (spec_version/malloc/free are universal). */
+/** Exports each mode must provide (spec_version/malloc/free are universal).
+ * Mode 0 additionally allows CANDIDATE-ONLY modules (prize bounties): a
+ * module exporting evaluate_candidate but no range ABI loads fine — it just
+ * can't serve coverage jobs (creation guards on supportsExtremum). */
 const MODE_ABI: Record<WasmVerificationMode, string[]> = {
-  witness_extremum: ["evaluate_range", "evaluate_seed"],
+  witness_extremum: [], // checked specially below
   output_hash: ["render_bucket"],
   training: ["render_bucket", "evaluate_seed"], // placeholder; Spec 03 finalizes
 };
@@ -102,6 +110,13 @@ export class SieveWorkerModule {
         throw new SieveWasmError(`worker module (mode ${mode}) missing required export: ${name}`);
       }
     }
+    if (mode === "witness_extremum") {
+      const hasExtremum = typeof table["evaluate_range"] === "function" && typeof table["evaluate_seed"] === "function";
+      const hasCandidates = typeof table["evaluate_candidate"] === "function";
+      if (!hasExtremum && !hasCandidates) {
+        throw new SieveWasmError("worker module exports neither the extremum ABI nor evaluate_candidate");
+      }
+    }
     exports._initialize?.();
     return new SieveWorkerModule(exports, hash, mode);
   }
@@ -126,6 +141,60 @@ export class SieveWorkerModule {
       return score;
     } finally {
       this.exports.free(params.ptr);
+    }
+  }
+
+  /** Does this artifact score arbitrary candidate blobs (prize bounties)? */
+  get supportsCandidates(): boolean {
+    return typeof this.exports.evaluate_candidate === "function";
+  }
+
+  /** Does this artifact serve range-enumeration (coverage) jobs? */
+  get supportsExtremum(): boolean {
+    return typeof this.exports.evaluate_range === "function" && typeof this.exports.evaluate_seed === "function";
+  }
+
+  candidateMaxLen(): number {
+    return this.exports.candidate_max_len ? this.exports.candidate_max_len() : 65536;
+  }
+
+  /** Score one candidate blob (prize bounties). Deterministic; INT64_MIN =
+   * invalid candidate/params. */
+  evaluateCandidate(candidate: Uint8Array, paramsJson: string): bigint {
+    if (!this.exports.evaluate_candidate) {
+      throw new SieveWasmError("evaluate_candidate not exported");
+    }
+    if (candidate.length === 0 || candidate.length > this.candidateMaxLen()) {
+      throw new SieveWasmError(`candidate length ${candidate.length} outside (0, ${this.candidateMaxLen()}]`);
+    }
+    const cand = this.writeBytes(candidate);
+    const params = this.writeBytes(new TextEncoder().encode(paramsJson));
+    try {
+      const score = this.exports.evaluate_candidate(cand.ptr, cand.len, params.ptr, params.len);
+      if (score === SIEVE_ERR_SCORE) throw new SieveWasmError("evaluate_candidate: invalid candidate or params");
+      return score;
+    } finally {
+      this.exports.free(params.ptr);
+      this.exports.free(cand.ptr);
+    }
+  }
+
+  /** Replay data for a candidate (module-defined format; the evo modules
+   * emit a tick trace the browser canvas draws). Optional export. */
+  traceCandidate(candidate: Uint8Array, paramsJson: string): Uint8Array {
+    if (!this.exports.trace_candidate) throw new SieveWasmError("trace_candidate not exported");
+    const cand = this.writeBytes(candidate);
+    const params = this.writeBytes(new TextEncoder().encode(paramsJson));
+    const outPtr = this.exports.malloc(RENDER_OUT_CAP);
+    if (outPtr === 0) throw new SieveWasmError("wasm malloc failed");
+    try {
+      const len = this.exports.trace_candidate(cand.ptr, cand.len, params.ptr, params.len, outPtr, RENDER_OUT_CAP);
+      if (len <= 0) throw new SieveWasmError(`trace_candidate failed: rc=${len}`);
+      return new Uint8Array(this.exports.memory.buffer.slice(outPtr, outPtr + len));
+    } finally {
+      this.exports.free(outPtr);
+      this.exports.free(params.ptr);
+      this.exports.free(cand.ptr);
     }
   }
 

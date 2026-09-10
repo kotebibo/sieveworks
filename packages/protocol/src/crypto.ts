@@ -27,6 +27,24 @@ export function verifyResultSignature(submission: ResultSubmission, walletAddres
   }
 }
 
+import { candidateSigningBytes, type CandidateSubmission } from "./schemas.js";
+
+export function verifyCandidateSignature(sub: CandidateSubmission): boolean {
+  try {
+    const pubkey = bs58.decode(sub.wallet_address);
+    if (pubkey.length !== 32) return false;
+    const { signature, ...unsigned } = sub;
+    return ed25519.verify(bs58.decode(signature), candidateSigningBytes(unsigned), pubkey);
+  } catch {
+    return false;
+  }
+}
+
+export function signCandidate(unsigned: Omit<CandidateSubmission, "signature">, secretKey: Uint8Array): string {
+  const seed = secretKey.length === 64 ? secretKey.slice(0, 32) : secretKey;
+  return bs58.encode(ed25519.sign(candidateSigningBytes(unsigned), seed));
+}
+
 export function walletFromSecretKey(secretKey: Uint8Array): string {
   const seed = secretKey.length === 64 ? secretKey.slice(0, 32) : secretKey;
   return bs58.encode(ed25519.getPublicKey(seed));

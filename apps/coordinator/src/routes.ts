@@ -2,11 +2,13 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
+  CandidateSubmission,
   ChallengeResponse,
   ChunkAssignment,
   ResultSubmission,
   verifyResultSignature,
 } from "@sieveworks/protocol";
+import { candidateQueueFull, submitCandidate } from "./candidates.js";
 import type { BucketPool } from "./bucketPool.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
@@ -170,7 +172,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       join users u on u.id = e.worker_id
       join jobs j on j.id = e.job_id
       where (u.wallet_address = ${wallet} or u.payout_address = ${wallet})
-        and j.price_per_chunk_lamports > 0
+        and e.cumulative_lamports > 0
       group by e.job_id, j.title, j.status
       order by max(e.updated_at) desc`;
     return { claims: rows, chain: getChainInfo() };
@@ -282,7 +284,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const specs = await sql`
       select ws.hash, ws.name, ws.description, ws.spec_version, ws.conformance,
              ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
-             ws.is_builtin, ws.is_private, ws.publisher, ws.created_at, ws.verification_mode,
+             ws.is_builtin, ws.is_private, ws.publisher, ws.created_at, ws.verification_mode, ws.supports_candidates,
              (ws.publisher is not null and ws.publisher = ${caller}) as mine,
              count(j.id) filter (where j.status = 'open')::int as open_jobs
       from worker_specs ws
@@ -375,10 +377,10 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return reply.code(200).send({ ok: true, hash: verdict.hash, spec_version: verdict.spec_version, note: "already registered by another publisher; metadata unchanged" });
     }
     await sql`
-      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher, verification_mode)
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher, verification_mode, supports_candidates)
       values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
               ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
-              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher}, ${verdict.verification_mode ?? "witness_extremum"})
+              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher}, ${verdict.verification_mode ?? "witness_extremum"}, ${verdict.supports_candidates ?? false})
       on conflict (hash) do update set name = excluded.name, description = excluded.description, is_private = ${isPrivate}, publisher = ${publisher}`;
     await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is ${isPrivate ? "private (visible only to you)" : "live"}.`, "/modules");
     events.emit("spec_registered", { hash: verdict.hash, name });
@@ -683,6 +685,46 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
         bytes_b64: Buffer.from(r.bytes).toString("base64"),
       })),
     };
+  });
+
+  // ---- prize candidates (Spec 02) ----------------------------------------
+  // Open submission: no chunk, no lease — a signed candidate blob verified
+  // immediately in a dedicated pool. Rate-limited per IP+wallet jointly.
+  app.post("/v1/candidates", {
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: "1 minute",
+        keyGenerator: (req: { ip: string; body?: unknown }) =>
+          `${req.ip}:${String((req.body as { wallet_address?: string })?.wallet_address ?? "")}`,
+      },
+    },
+  }, async (req, reply) => {
+    if (candidateQueueFull()) return reply.code(429).send({ error: "evaluation queue full — retry shortly" });
+    const parsed = CandidateSubmission.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues });
+    const verdict = await submitCandidate(parsed.data);
+    return reply.code(verdict.code).send(verdict.body);
+  });
+
+  // Leaderboard: scores + submitters always; candidate BYTES only after the
+  // job closes (anti-sniping — a sniper can't steal what they can't see).
+  app.get("/v1/jobs/:id/candidates", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [job] = await sql<{ status: string; bounty_kind: string }[]>`
+      select status, bounty_kind from jobs where id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "unknown job" });
+    if (job.bounty_kind !== "prize") return reply.code(409).send({ error: "not a prize bounty" });
+    const closed = job.status === "closed";
+    const rows = await sql`
+      select cs.id, cs.verified_score::text, cs.state, cs.submitted_at, u.wallet_address,
+             case when ${closed} then encode(cs.candidate, 'base64') else null end as candidate_b64
+      from candidate_submissions cs
+      join users u on u.id = cs.worker_id
+      where cs.job_id = ${id} and cs.state = 'verified'
+      order by cs.verified_score desc, cs.submitted_at asc
+      limit 100`;
+    return { candidates: rows, revealed: closed };
   });
 
   // ---- output delivery (mode 2) ------------------------------------------

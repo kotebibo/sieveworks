@@ -1,3 +1,4 @@
+import { finalizePrizes } from "./candidates.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
@@ -15,6 +16,8 @@ export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Time
     if (expired > 0) console.log(`sweeper: expired ${expired} unanswered challenge(s)`);
     const undelivered = await expireDeliveries(deps);
     if (undelivered > 0) console.log(`sweeper: expired ${undelivered} undelivered output(s)`);
+    const finalized = await finalizePrizes();
+    if (finalized > 0) console.log(`sweeper: finalized ${finalized} prize bount(y/ies)`);
     const quarantined = await sql<{ id: string; job_id: string }[]>`
       update chunks set state = 'quarantined', leased_to = null, lease_nonce = null
       where state = 'leased' and lease_expires_at < now() and attempts >= 5

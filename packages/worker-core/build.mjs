@@ -148,6 +148,24 @@ function buildMandelWasm() {
   console.log(`mandel worker_spec_hash: ${hash}`);
 }
 
+// flappy_evo: candidate-only evolutionary module (prize bounties) — WASM-only.
+const FLAPPY_SRC = join(root, "src", "flappy_evo.c");
+
+function buildFlappyWasm() {
+  const outDir = join(root, "out", "wasm");
+  mkdirSync(outDir, { recursive: true });
+  const wasm = join(outDir, "flappy_evo.wasm");
+  run(findEmcc(), [
+    ...COMMON_FLAGS, "-sSTANDALONE_WASM", "--no-entry", "-sALLOW_MEMORY_GROWTH",
+    "-sEXPORTED_FUNCTIONS=_evaluate_candidate,_candidate_max_len,_trace_candidate,_spec_version,_malloc,_free",
+    "-o", wasm, FLAPPY_SRC,
+  ]);
+  const hash = createHash("sha256").update(readFileSync(wasm)).digest("hex");
+  writeFileSync(join(outDir, "flappy_evo.wasm.sha256"), hash + "\n");
+  console.log(`wasm: ${wasm}`);
+  console.log(`flappy_evo worker_spec_hash: ${hash}`);
+}
+
 const target = process.argv[2] ?? "all";
 if (target === "spawnq-native") {
   buildSpawnqNative();
@@ -155,6 +173,8 @@ if (target === "spawnq-native") {
   buildSpawnqWasm();
 } else if (target === "mandel-wasm") {
   buildMandelWasm();
+} else if (target === "flappy-wasm") {
+  buildFlappyWasm();
 } else {
   if (target === "native" || target === "all") buildNative();
   if (target === "wasm" || target === "all") buildWasm();

@@ -29,6 +29,10 @@ app.log.info({ builtins: builtinHashes.length, hashes: builtinHashes }, "worker 
 
 const bucketPool = new BucketPool();
 await bucketPool.start();
+// Prize candidates run in their OWN pool so a submission burst can never
+// starve challenge judging (see candidates.ts).
+const { candidatePool } = await import("./candidates.js");
+await candidatePool.start();
 
 const { store: leases, backend } = createLeaseStore();
 app.log.info({ backend }, "lease store ready");

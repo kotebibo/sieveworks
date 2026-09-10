@@ -43,6 +43,50 @@ async function run(): Promise<void> {
 
   const specVersion = mod.specVersion();
 
+  // Candidate capability (prize bounties) — orthogonal to mode. Gate:
+  // 16 seeded pseudo-random candidates scored TWICE → identical, each call
+  // fast enough for the synchronous submission path.
+  let supportsCandidates = false;
+  if (mod.supportsCandidates) {
+    const cands = Array.from({ length: 16 }, (_, i) => {
+      const len = 32 + ((i * 37) % 96);
+      return Uint8Array.from({ length: len }, (_, j) => (i * 131 + j * 29 + 7) & 0xff);
+    });
+    const score = (c: Uint8Array) => {
+      try { return mod.evaluateCandidate(c, paramsJson).toString(); }
+      catch { return "ERR"; }
+    };
+    const t0 = Date.now();
+    const r1 = cands.map(score);
+    const r2 = cands.map(score);
+    const perCallMs = (Date.now() - t0) / 32;
+    if (JSON.stringify(r1) !== JSON.stringify(r2)) {
+      return void parentPort!.postMessage({ ok: false, reason: "evaluate_candidate is non-deterministic" });
+    }
+    if (r1.every((s) => s === "ERR")) {
+      return void parentPort!.postMessage({ ok: false, reason: "evaluate_candidate rejected every probe candidate" });
+    }
+    if (perCallMs > 100) {
+      return void parentPort!.postMessage({ ok: false, reason: `evaluate_candidate too slow (${perCallMs.toFixed(0)}ms/call > 100ms)` });
+    }
+    supportsCandidates = true;
+  }
+
+  if (mod.verificationMode === "witness_extremum" && !mod.supportsExtremum) {
+    // Candidate-only module (prize bounties): the candidate suite above IS
+    // the conformance; there is no range ABI to exercise.
+    if (!supportsCandidates) {
+      return void parentPort!.postMessage({ ok: false, reason: "module exports no usable ABI" });
+    }
+    return void parentPort!.postMessage({
+      ok: true,
+      verification_mode: "witness_extremum",
+      supports_candidates: true,
+      spec_version: specVersion,
+      buckets_checked: 0,
+    });
+  }
+
   if (mod.verificationMode === "witness_extremum") {
     const start = 0n, end = 8192n, bucket = 1024n;
     const run1 = fold(mod, start, end, bucket, paramsJson);
@@ -63,6 +107,7 @@ async function run(): Promise<void> {
     return void parentPort!.postMessage({
       ok: true,
       verification_mode: "witness_extremum",
+      supports_candidates: supportsCandidates,
       spec_version: specVersion,
       sample: run1.slice(0, 4),
       buckets_checked: run1.length,
@@ -96,6 +141,7 @@ async function run(): Promise<void> {
     return void parentPort!.postMessage({
       ok: true,
       verification_mode: "output_hash",
+      supports_candidates: supportsCandidates,
       spec_version: specVersion,
       sample: run1.slice(0, 4),
       buckets_checked: GATE_BUCKETS,

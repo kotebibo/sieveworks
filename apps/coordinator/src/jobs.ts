@@ -31,6 +31,12 @@ export const CreateJobRequest = z.object({
   budget_lamports: z.coerce.bigint().nonnegative().default(0n),
   price_per_chunk_lamports: z.coerce.bigint().nonnegative().default(0n),
   lease_ttl_seconds: z.number().int().min(30).max(3600).default(180),
+  // Prize bounties (Spec 02): winner-takes-prize for the best verified
+  // candidate above threshold_score by deadline_at. No chunks/leases.
+  bounty_kind: z.enum(["coverage", "prize"]).default("coverage"),
+  prize_lamports: z.coerce.bigint().positive().optional(),
+  threshold_score: z.coerce.bigint().optional(),
+  deadline_at: z.iso.datetime({ offset: true }).optional(),
 });
 export type CreateJobRequest = z.infer<typeof CreateJobRequest>;
 
@@ -86,7 +92,17 @@ export async function createJob(
   req: CreateJobRequest,
   creatorWallet = "coordinator-admin"
 ): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number; status: string }> {
+  // Prize bounties take a fully separate path — validated BEFORE the
+  // coverage pricing rules below, which would reject the prize shape
+  // (budget > 0 with price 0) outright.
+  if (req.bounty_kind === "prize") return createPrizeJob(req, creatorWallet);
+
   const workerSpecHash = req.worker_spec_hash;
+  // A candidate-only module (prize bounties) cannot enumerate ranges.
+  const coverageMod = await registry.get(workerSpecHash);
+  if (coverageMod.verificationMode === "witness_extremum" && !coverageMod.supportsExtremum) {
+    throw new Error("module supports prize bounties only (no range ABI) — use bounty_kind: prize");
+  }
   const start = BigInt(req.search_space_start);
   const end = BigInt(req.search_space_end);
   if (end <= start) throw new Error("empty search space");
@@ -172,4 +188,52 @@ export async function createJob(
       : 0;
 
   return { jobId, chunkSize, chunkCount, honeypots, status };
+}
+
+/** Prize bounty creation: escrow budget = the prize; no chunks, no
+ * honeypots; module must score candidates; a per-job salt is FORCED into
+ * params so fitness landscapes differ per job — a genome revealed at one
+ * job's close cannot win another (adversarial-review fix; candidate modules
+ * must fold `prize_salt` into their environment/course generation). */
+async function createPrizeJob(
+  req: CreateJobRequest,
+  creatorWallet: string
+): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number; status: string }> {
+  const [spec] = await sql<{ supports_candidates: boolean }[]>`
+    select supports_candidates from worker_specs where hash = ${req.worker_spec_hash}`;
+  if (!spec?.supports_candidates) throw new Error("module does not score candidates (no evaluate_candidate export)");
+  if (req.prize_lamports === undefined || req.prize_lamports <= 0n) throw new Error("prize_lamports required");
+  if (req.threshold_score === undefined) throw new Error("threshold_score required");
+  if (!req.deadline_at) throw new Error("deadline_at required");
+  const deadline = new Date(req.deadline_at);
+  if (deadline.getTime() < Date.now() + 60 * 60 * 1000) throw new Error("deadline must be at least 1 hour ahead");
+  if (req.price_per_chunk_lamports !== 0n) throw new Error("prize bounties have no per-chunk price");
+  const budget = req.prize_lamports; // escrow budget IS the prize
+
+  const [creator] = await sql<{ id: string }[]>`
+    insert into users (wallet_address) values (${creatorWallet})
+    on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
+    returning id`;
+
+  const params = { ...req.params };
+  const status = "draft"; // prize jobs always fund (prize > 0)
+  const [job] = await sql<{ id: string }[]>`
+    insert into jobs (creator_id, title, description, game, worker_spec_hash, version_pin,
+                      params, search_space_start, search_space_end, chunk_size, bucket_size,
+                      budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds,
+                      verification_mode, bounty_kind, prize_lamports, threshold_score, deadline_at)
+    values (${creator!.id}, ${req.title}, ${req.description ?? null}, ${req.game},
+            ${req.worker_spec_hash}, ${req.version_pin}, ${sql.json(params as never)},
+            0, 1, 1, 1,
+            ${budget.toString()}, 0, ${status}, ${req.lease_ttl_seconds},
+            'witness_extremum', 'prize', ${req.prize_lamports.toString()},
+            ${req.threshold_score.toString()}, ${deadline.toISOString()})
+    returning id`;
+  const jobId = job!.id;
+  // Forced per-job landscape salt = the job's own id bytes (u64 of the
+  // first 8). Candidate modules fold prize_salt into course generation.
+  const prizeSalt = BigInt("0x" + jobId.replace(/-/g, "").slice(0, 16)).toString();
+  await sql`update jobs set params = params || ${sql.json({ prize_salt: prizeSalt } as never)} where id = ${jobId}`;
+
+  return { jobId, chunkSize: 0n, chunkCount: 0, honeypots: 0, status };
 }

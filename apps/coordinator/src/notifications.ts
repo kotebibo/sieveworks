@@ -9,7 +9,7 @@ import { env } from "./env.js";
  * not a rewrite (same pattern as PaymentRail).
  */
 
-export type NotifyKind = "record_found" | "bounty_complete" | "verified" | "module_registered";
+export type NotifyKind = "record_found" | "bounty_complete" | "verified" | "module_registered" | "prize_won" | "prize_unclaimed";
 
 interface EmailSender {
   readonly kind: string;

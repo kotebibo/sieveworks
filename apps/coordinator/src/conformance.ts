@@ -9,6 +9,7 @@ export interface ConformanceResult {
   hash: string;
   reason?: string;
   verification_mode?: "witness_extremum" | "output_hash" | "training";
+  supports_candidates?: boolean;
   spec_version?: string;
   sample?: unknown;
   buckets_checked?: number;

@@ -90,4 +90,10 @@ export class BucketPool {
     const r = await this.dispatch({ op: "render", hash, rangeStart: rangeStart.toString(), rangeEnd: rangeEnd.toString(), paramsJson, salt16Hex });
     return r.digestHex!;
   }
+
+  /** Prize-bounty candidate re-evaluation (one deterministic fitness call). */
+  async evaluateCandidate(hash: string, candidateB64: string, paramsJson: string): Promise<bigint> {
+    const r = await this.dispatch({ op: "candidate", hash, rangeStart: "0", rangeEnd: "0", paramsJson, candidateB64 });
+    return BigInt(r.maxScore!);
+  }
 }

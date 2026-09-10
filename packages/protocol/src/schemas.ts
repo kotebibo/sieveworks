@@ -132,3 +132,21 @@ export type ChallengeVerdict = z.infer<typeof ChallengeVerdict>;
 /** WASM exports every conforming worker module must provide. Enforced by
  * wasm-runtime at load time. evaluate_seed is the verification primitive. */
 export const WORKER_ABI = ["evaluate_range", "evaluate_seed", "spec_version"] as const;
+
+/** Open prize-bounty submission (Spec 02): anyone, anytime before the
+ * deadline — no chunk, no lease. Signed by the submitting worker key so the
+ * winner is attributable; verification is one deterministic re-evaluation. */
+export const CandidateSubmission = z.object({
+  job_id: uuid,
+  candidate_b64: z.string().min(1).max(90_000),
+  claimed_score: i64String,
+  nonce: z.string().min(16).max(128),
+  wallet_address: z.string().min(32).max(64),
+  signature: base58Sig,
+});
+export type CandidateSubmission = z.infer<typeof CandidateSubmission>;
+
+export function candidateSigningBytes(sub: Omit<CandidateSubmission, "signature">): Uint8Array {
+  const { job_id, candidate_b64, claimed_score, nonce, wallet_address } = sub;
+  return canonicalBytes({ job_id, candidate_b64, claimed_score, nonce, wallet_address });
+}

@@ -56,6 +56,18 @@ const BUILTINS = [
     default_range_start: "0",
     default_range_end: "1024",
   },
+  {
+    // Candidate-only evolutionary module (prize bounties): candidates are
+    // 130-byte MLP genomes flying a flappy-style course generated from the
+    // job's forced prize_salt — every bounty is a different course, so
+    // winning genomes don't transfer between jobs.
+    file: "flappy_evo.wasm",
+    name: "AI learns to fly (evolution)",
+    description: "Prize bounties for neuroevolution: submit a 130-byte neural-net genome that flies a procedurally-generated pipe course. Fitness is re-evaluated deterministically in one call — train however you like, the best verified bird wins the escrowed prize.",
+    example_params: { max_ticks: 3000 },
+    default_range_start: "0",
+    default_range_end: "1",
+  },
 ];
 
 class ModuleRegistry {
@@ -75,11 +87,11 @@ class ModuleRegistry {
       await sql`
         insert into worker_specs (hash, name, description, spec_version, wasm, conformance,
                                   example_params, default_range_start, default_range_end, is_builtin,
-                                  verification_mode)
+                                  verification_mode, supports_candidates)
         values (${hash}, ${b.name}, ${b.description}, ${mod.specVersion()},
                 ${Buffer.from(bytes)}, ${sql.json({ builtin: true, passed: true } as never)},
                 ${sql.json(b.example_params as never)}, ${b.default_range_start},
-                ${b.default_range_end}, true, ${mod.verificationMode})
+                ${b.default_range_end}, true, ${mod.verificationMode}, ${mod.supportsCandidates})
         on conflict (hash) do nothing`;
       this.cache.set(hash, mod);
       this.bytesCache.set(hash, bytes);

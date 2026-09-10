@@ -101,8 +101,23 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         <Panel label="◢ swarm" right={`${fmt(done)} / ${fmt(total)}`}>
           {cells ? <Sieve cells={cells} /> : <div className="h-40 skeleton" />}
         </Panel>
-        <Panel label={isExtremum ? "◆ current record" : "◆ output"}>
-          {!isExtremum ? (
+        <Panel label={String(detail.job.bounty_kind ?? "") === "prize" ? "◆ prize" : isExtremum ? "◆ current record" : "◆ output"}>
+          {String(detail.job.bounty_kind ?? "") === "prize" ? (
+            <div className="text-sm space-y-2">
+              <div className="num text-xs space-y-1">
+                <div>prize <span className="text-[var(--accent)] font-display text-xl">◎{solStr(String(detail.job.prize_lamports ?? "0"))}</span></div>
+                <div className="text-[var(--text-dim)]">threshold {String(detail.job.threshold_score ?? "—")}</div>
+                {detail.job.deadline_at != null && (
+                  <div className="text-[var(--text-dim)]">deadline {new Date(String(detail.job.deadline_at)).toLocaleString()}</div>
+                )}
+              </div>
+              <p className="text-[var(--text-dim)] text-xs">
+                Train a genome in your browser and submit it — the best
+                verified score above threshold at the deadline takes the prize.
+              </p>
+              <Button href={`/train/${id}`} variant="primary">▶ TRAIN & COMPETE</Button>
+            </div>
+          ) : !isExtremum ? (
             <div className="text-sm space-y-2">
               <p className="text-[var(--text-dim)] text-xs">
                 This job produces verified output, not scores — watch the
