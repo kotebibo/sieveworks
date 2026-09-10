@@ -77,6 +77,7 @@ export class ContributeEngine {
   }
 
   private payoutAddress: string | undefined;
+  private mode: "witness_extremum" | "output_hash" = "witness_extremum";
 
   async start(jobId: string, threads: number, payoutAddress?: string): Promise<void> {
     if (this.running) return;
@@ -87,10 +88,11 @@ export class ContributeEngine {
     this.emit({ status: "starting", wallet: this.wallet, threads });
 
     // Fetch the job's OWN module by hash — the browser runs whatever worker the
-    // bounty pinned (Minecraft, hash-grind, or an uploaded one), all on the
-    // same rails. wasm-runtime verifies the hash before instantiation.
+    // bounty pinned (Minecraft, hash-grind, render, or an uploaded one), all
+    // on the same rails. wasm-runtime verifies the hash before instantiation.
     const job = await (await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}`)).json();
     const specHash = job.job.worker_spec_hash as string;
+    this.mode = (job.job.verification_mode as "witness_extremum" | "output_hash" | undefined) ?? "witness_extremum";
     const wasmBytes = await (await fetch(`${COORDINATOR_URL}/v1/specs/${specHash}/artifact`)).arrayBuffer();
 
     this.workers = [];
@@ -156,6 +158,8 @@ export class ContributeEngine {
       .filter((s): s is NonNullable<typeof s> => s !== null);
 
     const allLeaves: BucketLeaf[] = [];
+    const allOutputs = new Map<number, Uint8Array>(); // mode-2: index → bytes
+    const saltHex = assignment.job_id.replace(/-/g, "").toLowerCase();
     await Promise.all(
       slices.map(
         (slice, taskId) =>
@@ -164,8 +168,10 @@ export class ContributeEngine {
               const m = e.data;
               if (m.type === "progress" && m.taskId === taskId) this.onProgress(m.seedsDone);
               if (m.type === "done" && m.taskId === taskId) {
-                for (const l of m.leaves) {
+                for (let li = 0; li < m.leaves.length; li++) {
+                  const l = m.leaves[li];
                   allLeaves.push({ index: l.index, maxScore: BigInt(l.maxScore), maxSeed: BigInt(l.maxSeed) });
+                  if (m.outputs) allOutputs.set(l.index, new Uint8Array(m.outputs[li]));
                 }
                 resolve();
               }
@@ -179,31 +185,46 @@ export class ContributeEngine {
               bucketSize: assignment.bucket_size,
               baseIndex: slice.fromBucket,
               paramsJson,
+              mode: this.mode,
+              saltHex,
             });
           })
       )
     );
 
     allLeaves.sort((a, b) => a.index - b.index);
-    // Extremum fold: ascending, strictly greater — protocol tie-break rule.
-    let best = allLeaves[0]!;
-    for (const leaf of allLeaves) if (leaf.maxScore > best.maxScore) best = leaf;
     const root = toHex(merkleRoot(allLeaves.map(hashLeaf)));
+    const isRender = this.mode === "output_hash";
+    // Extremum fold: ascending, strictly greater — protocol tie-break rule.
+    // (Meaningless for render leaves; digests aren't scores.)
+    let best = allLeaves[0]!;
+    if (!isRender) for (const leaf of allLeaves) if (leaf.maxScore > best.maxScore) best = leaf;
 
     this.retained.set(assignment.chunk_id, allLeaves);
     if (this.retained.size > 8) this.retained.delete(this.retained.keys().next().value as string);
 
-    const unsigned: UnsignedResult = {
-      chunk_id: assignment.chunk_id,
-      worker_spec_hash: assignment.worker_spec_hash,
-      extremum_score: best.maxScore.toString(),
-      witness_seed: best.maxSeed.toString(),
-      merkle_root: root,
-      buckets_count: allLeaves.length,
-      seeds_evaluated: (end - start).toString(),
-      duration_ms: Math.round(performance.now() - t0),
-      nonce: assignment.nonce,
-    };
+    const unsigned: UnsignedResult = isRender
+      ? {
+          chunk_id: assignment.chunk_id,
+          worker_spec_hash: assignment.worker_spec_hash,
+          mode: "output_hash",
+          merkle_root: root,
+          buckets_count: allLeaves.length,
+          seeds_evaluated: (end - start).toString(),
+          duration_ms: Math.round(performance.now() - t0),
+          nonce: assignment.nonce,
+        }
+      : {
+          chunk_id: assignment.chunk_id,
+          worker_spec_hash: assignment.worker_spec_hash,
+          extremum_score: best.maxScore.toString(),
+          witness_seed: best.maxSeed.toString(),
+          merkle_root: root,
+          buckets_count: allLeaves.length,
+          seeds_evaluated: (end - start).toString(),
+          duration_ms: Math.round(performance.now() - t0),
+          nonce: assignment.nonce,
+        };
     // Signing happens HERE, in host code — never inside a worker thread.
     const submission = { ...unsigned, signature: signResult(unsigned, this.seed) };
 
@@ -241,8 +262,30 @@ export class ContributeEngine {
     }
 
     if (verdict.status === "accepted") {
-      this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
-      this.logLine(`chunk accepted · score ${best.maxScore} · seed ${best.maxSeed}`);
+      if (isRender) {
+        // Verification passed → deliver the bytes; delivery is what gets
+        // paid (and what paints the render view for everyone watching).
+        const outputs = allLeaves.map((l) => {
+          const bytes = allOutputs.get(l.index);
+          if (!bytes) throw new Error(`missing output for bucket ${l.index}`);
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 8192) {
+            bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+          }
+          return btoa(bin);
+        });
+        const put = await fetch(`${COORDINATOR_URL}/v1/results/${verdict.result_id}/outputs`, {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ outputs }),
+        });
+        if (!put.ok) throw new Error(`delivery → ${put.status}`);
+        this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
+        this.logLine(`chunk verified · ${allLeaves.length} tile(s) delivered`);
+      } else {
+        this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
+        this.logLine(`chunk accepted · score ${best.maxScore} · seed ${best.maxSeed}`);
+      }
     } else {
       this.emit({ currentChunk: null });
       this.logLine(`chunk rejected`);

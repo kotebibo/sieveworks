@@ -1,8 +1,10 @@
-import { SieveWorkerModule } from "@sieveworks/wasm-runtime";
+import { bucketDigest16, SieveWorkerModule } from "@sieveworks/wasm-runtime";
+import { digest16ToWire } from "@sieveworks/protocol";
 
 /**
  * One evaluation thread. Holds its own WASM instance (independent instances,
- * no SharedArrayBuffer — spec §10) and folds assigned bucket ranges.
+ * no SharedArrayBuffer — spec §10) and folds assigned bucket ranges —
+ * extremum fold (mode 0) or render+digest (mode 1).
  * Pure compute: no keys, no signing, no network — the trust boundary.
  */
 
@@ -19,6 +21,8 @@ interface EvalMsg {
   bucketSize: number;
   baseIndex: number; // bucket index of rangeStart within the chunk
   paramsJson: string;
+  mode?: "witness_extremum" | "output_hash";
+  saltHex?: string; // output_hash: job salt for leaf digests
 }
 
 let module_: SieveWorkerModule | null = null;
@@ -45,6 +49,24 @@ self.onmessage = async (e: MessageEvent<InitMsg | EvalMsg>) => {
       const end = BigInt(msg.rangeEnd);
       const bucket = BigInt(msg.bucketSize);
       let index = msg.baseIndex;
+
+      if (msg.mode === "output_hash") {
+        // Render each bucket, digest host-side (same helper the coordinator
+        // uses), retain the BYTES for post-accept delivery.
+        const salt = new Uint8Array((msg.saltHex ?? "00".repeat(16)).match(/../g)!.map((h) => parseInt(h, 16)));
+        const outputs: ArrayBuffer[] = [];
+        for (let s = start; s < end; s += bucket, index++) {
+          const e2 = s + bucket < end ? s + bucket : end;
+          const bytes = module_.renderBucket(s, e2, msg.paramsJson);
+          const wire = digest16ToWire(bucketDigest16(salt, bytes));
+          leaves.push({ index, maxScore: wire.score, maxSeed: wire.seed });
+          outputs.push(bytes.buffer as ArrayBuffer);
+          self.postMessage({ type: "progress", taskId: msg.taskId, seedsDone: Number(e2 - s) });
+        }
+        self.postMessage({ type: "done", taskId: msg.taskId, leaves, outputs }, { transfer: outputs });
+        return;
+      }
+
       for (let s = start; s < end; s += bucket, index++) {
         const e2 = s + bucket < end ? s + bucket : end;
         const { maxScore, maxSeed } = module_.evaluateRange(s, e2, msg.paramsJson);

@@ -10,7 +10,10 @@ import { registerRoutes } from "./routes.js";
 import { startSweeper } from "./sweeper.js";
 
 const app = Fastify({ logger: true, bodyLimit: 8 * 1024 * 1024 });
-await app.register(cors, { origin: true });
+// methods must include PUT: output delivery (/v1/results/:id/outputs) is a
+// browser PUT and @fastify/cors defaults to GET/HEAD/POST only — without
+// this the preflight fails and browser workers can render but never deliver.
+await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] });
 // Sized for a real browser worker at full tilt: a fast module (hashgrind) on
 // ~12 threads leases+submits every couple of seconds ≈ 700+ req/min from ONE
 // honest IP. 120/min throttled legitimate contributions into 429 stalls that
