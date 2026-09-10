@@ -17,3 +17,4 @@ packages/worker-core/out/
 .codex/
 .cursor/
 .agents/
+/pitch/
