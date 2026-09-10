@@ -30,6 +30,7 @@ const DISC = {
   initialize_job: Uint8Array.from([137, 22, 138, 41, 76, 208, 114, 50]),
   record_find: Uint8Array.from([247, 136, 26, 112, 14, 245, 169, 83]),
   claim: Uint8Array.from([62, 198, 214, 193, 213, 159, 108, 210]),
+  close_job: Uint8Array.from([90, 100, 180, 200, 200, 163, 120, 182]),
 } as const;
 
 // sha256("account:JobEscrow")[0..8] — Anchor account data starts with this.
@@ -212,4 +213,26 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export function explorerUrl(kind: "tx" | "address", value: string, cluster = "devnet"): string {
   const suffix = cluster === "mainnet-beta" ? "" : `?cluster=${cluster}`;
   return `https://explorer.solana.com/${kind === "tx" ? "tx" : "address"}/${value}${suffix}`;
+}
+
+/** Close a job's escrow: returns EVERY remaining lamport to the funder.
+ * Requires BOTH the funder and the coordinator as signers (program upgrade
+ * 2026-09: the coordinator co-signs only when its books say the job is
+ * settled — a prize funder can no longer sweep the pot mid-competition).
+ * Account order mirrors the CloseJob struct: funder, coordinator, escrow. */
+export function closeJobIx(args: {
+  jobUuid: string;
+  funder: PublicKey;
+  coordinator: PublicKey;
+}): TransactionInstruction {
+  const jobId = uuidToBytes(args.jobUuid);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: args.funder, isSigner: true, isWritable: true },
+      { pubkey: args.coordinator, isSigner: true, isWritable: false },
+      { pubkey: jobEscrowPda(jobId), isSigner: false, isWritable: true },
+    ],
+    data: concat(DISC.close_job, jobId),
+  });
 }

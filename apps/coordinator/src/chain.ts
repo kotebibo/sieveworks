@@ -12,6 +12,7 @@ import {
   jobEscrowPda,
   recordFindIx,
   uuidToBytes,
+  closeJobIx,
   type JobEscrowAccount,
 } from "@sieveworks/chain";
 import { env } from "./env.js";
@@ -116,6 +117,18 @@ export async function coSignAndSendClaim(serialized: Uint8Array): Promise<string
   const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
   await connection.confirmTransaction(sig, "confirmed");
   return sig;
+}
+
+/** Build the close_job instruction we EXPECT — byte-exact verification
+ * before co-signing a funder's escrow reclaim (program requires both). */
+export function expectedCloseIx(args: { jobUuid: string; funder: string }) {
+  init();
+  if (!authority) throw new Error("chain rail disabled");
+  return closeJobIx({
+    jobUuid: args.jobUuid,
+    funder: new PublicKey(args.funder),
+    coordinator: authority.publicKey,
+  });
 }
 
 /** Build the claim instruction we EXPECT for a voucher — used to verify the

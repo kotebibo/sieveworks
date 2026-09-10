@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
-import { initializeJobIx } from "@sieveworks/chain";
+import { closeJobIx, initializeJobIx } from "@sieveworks/chain";
 import {
   explorerTx,
   fetchChainInfo,
@@ -11,6 +11,7 @@ import {
   fetchJobResults,
   fetchJobSwarm,
   notifyFunded,
+  closeFundingReq,
   resultsCsvUrl,
   solStr,
   subscribeEvents,
@@ -73,10 +74,13 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   return (
     <div className="mx-auto max-w-[1400px] space-y-3">
       {String(detail.job.status) === "draft" && priced && <FundingBanner detail={detail} id={id} />}
-      {priced && detail.job.funding_signature != null && (
+      {String(detail.job.status) === "closed" && detail.job.funding_signature != null && (
+        <ReclaimBanner detail={detail} id={id} />
+      )}
+      {detail.job.funding_signature != null && (
         <div className="panel px-4 py-2.5 num text-xs flex flex-wrap items-center gap-x-4 gap-y-1">
           <span style={{ color: "var(--verified)" }}>✓ escrow funded</span>
-          <span className="text-[var(--text-dim)]">◎{solStr(String(detail.job.budget_lamports))} locked · ◎{solStr(String(detail.job.price_per_chunk_lamports))}/chunk</span>
+          <span className="text-[var(--text-dim)]">◎{solStr(String(detail.job.budget_lamports))} locked{priced ? ` · ◎${solStr(String(detail.job.price_per_chunk_lamports))}/chunk` : " · winner-takes-prize"}</span>
           <a href={explorerTx(String(detail.job.funding_signature))} target="_blank" rel="noreferrer"
             className="text-[var(--text-dim)] underline hover:text-[var(--accent)]">funding tx ↗</a>
         </div>
@@ -185,6 +189,57 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
 
 /** Shown while a priced job is 'draft': the escrow hasn't been funded yet.
  * Only the creator sees the action; anyone else sees the state. */
+/** Closed job with a funded escrow: the funder reclaims every remaining
+ * lamport. The program requires the coordinator to CO-SIGN (it refuses
+ * while a prize or worker earnings are still unclaimed), so the flow is:
+ * build with both signers → funder partial-signs → coordinator verifies
+ * byte-exact, co-signs, submits. */
+function ReclaimBanner({ detail, id }: { detail: JobDetail; id: string }) {
+  const { wallet, token } = useAuth();
+  const { connection } = useConnection();
+  const { publicKey, signTransaction } = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const isCreator = wallet != null && wallet === String(detail.job.creator_wallet);
+  if (!isCreator) return null;
+
+  async function reclaim() {
+    if (!publicKey || !token || !signTransaction) { setMsg("connect the funding wallet and sign in"); return; }
+    setBusy(true); setMsg(null);
+    try {
+      const chain = await fetchChainInfo();
+      if (!chain.coordinator) throw new Error("coordinator authority unavailable");
+      const ix = closeJobIx({ jobUuid: id, funder: publicKey, coordinator: new PublicKey(chain.coordinator) });
+      const tx = new Transaction().add(ix);
+      tx.feePayer = publicKey;
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      const signed = await signTransaction(tx);
+      const b64 = Buffer.from(signed.serialize({ requireAllSignatures: false })).toString("base64");
+      const r = await closeFundingReq(id, b64, token);
+      if (!r.ok) throw new Error(r.error ?? "close failed");
+      setMsg(`escrow reclaimed ✓ ${r.signature?.slice(0, 12)}…`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel ticked px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span className="barlabel">escrow</span>
+      <span className="text-[13px] text-[var(--text-dim)]">
+        This job is closed — reclaim whatever remains in its on-chain escrow.
+      </span>
+      <button onClick={reclaim} disabled={busy}
+        className="font-medium text-[13px] px-4 py-2 border border-[var(--border-bright)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-50">
+        {busy ? "co-signing…" : "Reclaim unspent budget"}
+      </button>
+      {msg && <span className="num text-xs text-[var(--text-dim)]">{msg}</span>}
+    </div>
+  );
+}
+
 function FundingBanner({ detail, id }: { detail: JobDetail; id: string }) {
   const { wallet, token } = useAuth();
   const { connection } = useConnection();

@@ -26,6 +26,7 @@ import {
   coSignAndSendClaim,
   coordinatorPubkey,
   expectedClaimIx,
+  expectedCloseIx,
   fetchJobEscrow,
   getChainInfo,
 } from "./chain.js";
@@ -261,6 +262,69 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return { ok: true, signature: sig };
     } catch (err) {
       return reply.code(502).send({ error: `claim failed on-chain: ${String(err)}` });
+    }
+  });
+
+  // Funder reclaims the escrow's remaining lamports. The program (upgrade
+  // 2026-09) requires the COORDINATOR to co-sign a close — we only sign when
+  // our books say the job is settled: closed status, and for prize bounties
+  // either the prize was awarded-and-claimed or there was no winner. Same
+  // byte-exact pattern as claims: we never sign bytes we didn't author.
+  app.post("/v1/jobs/:id/close-funding", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    if (!chainEnabled()) return reply.code(503).send({ error: "chain rail disabled" });
+    const { id } = req.params as { id: string };
+    const { tx: txB64 } = (req.body ?? {}) as { tx?: string };
+    if (!txB64) return reply.code(400).send({ error: "tx required (base64)" });
+
+    const [job] = await sql<{ status: string; bounty_kind: string; prize_winner_id: string | null; prize_awarded_at: string | null; creator_wallet: string }[]>`
+      select j.status, j.bounty_kind, j.prize_winner_id, j.prize_awarded_at::text, u.wallet_address as creator_wallet
+      from jobs j join users u on u.id = j.creator_id where j.id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "unknown job" });
+    if (job.creator_wallet !== wallet) return reply.code(403).send({ error: "not your job" });
+    if (job.status !== "closed") return reply.code(409).send({ error: "job must be closed first" });
+    if (job.bounty_kind === "prize" && job.prize_winner_id) {
+      // The prize must leave the escrow before the funder reclaims the rest.
+      const [unclaimed] = await sql<{ n: number }[]>`
+        select count(*)::int as n from earnings
+        where job_id = ${id} and cumulative_lamports > claimed_lamports`;
+      if ((unclaimed?.n ?? 0) > 0) return reply.code(409).send({ error: "winner has not claimed the prize yet" });
+    }
+    // Coverage jobs: any credited-but-unclaimed earnings block the reclaim
+    // for the same reason — closing would strand workers' claims.
+    if (job.bounty_kind !== "prize") {
+      const [unclaimed] = await sql<{ n: number }[]>`
+        select count(*)::int as n from earnings
+        where job_id = ${id} and cumulative_lamports > claimed_lamports`;
+      if ((unclaimed?.n ?? 0) > 0) return reply.code(409).send({ error: "workers still have unclaimed earnings" });
+    }
+
+    let tx: Transaction;
+    try {
+      tx = Transaction.from(Buffer.from(txB64, "base64"));
+    } catch {
+      return reply.code(400).send({ error: "malformed transaction" });
+    }
+    if (tx.instructions.length !== 1) return reply.code(400).send({ error: "expected exactly one instruction" });
+    const ix = tx.instructions[0]!;
+    const expected = expectedCloseIx({ jobUuid: id, funder: wallet });
+    if (!ix.programId.equals(expected.programId) || Buffer.compare(ix.data, expected.data) !== 0) {
+      return reply.code(400).send({ error: "instruction does not match" });
+    }
+    if (ix.keys.length !== expected.keys.length ||
+        !ix.keys.every((k, i) => k.pubkey.equals(expected.keys[i]!.pubkey)
+          && k.isSigner === expected.keys[i]!.isSigner && k.isWritable === expected.keys[i]!.isWritable)) {
+      return reply.code(400).send({ error: "accounts do not match" });
+    }
+    if (!tx.feePayer?.equals(expected.keys[0]!.pubkey)) return reply.code(400).send({ error: "fee payer must be the funder" });
+
+    try {
+      const sig = await coSignAndSendClaim(Buffer.from(txB64, "base64"));
+      events.emit("job_reclaimed", { job_id: id });
+      return { ok: true, signature: sig };
+    } catch (err) {
+      return reply.code(502).send({ error: `close failed on-chain: ${String(err)}` });
     }
   });
 

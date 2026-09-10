@@ -195,6 +195,15 @@ export async function fetchNotifications(token: string): Promise<{ notifications
   return (await res.json()) as { notifications: Notification[] };
 }
 
+export async function closeFundingReq(jobId: string, txB64: string, token: string): Promise<{ ok: boolean; signature?: string; error?: string }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}/close-funding`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tx: txB64 }),
+  });
+  return (await res.json()) as { ok: boolean; signature?: string; error?: string };
+}
+
 export interface CreateJobBody {
   title: string;
   worker_spec_hash: string;

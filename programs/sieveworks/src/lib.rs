@@ -329,12 +329,20 @@ pub struct Slash<'info> {
 pub struct CloseJob<'info> {
     #[account(mut)]
     pub funder: Signer<'info>,
+    // The coordinator must CO-SIGN a close (mirroring Slash). Without this,
+    // "has_one = funder" alone lets a prize funder sweep the escrow the
+    // moment a worker is about to clear the threshold — the chain has no
+    // notion of deadlines or pending winners, so the party that does (the
+    // coordinator) must approve the reclaim. Funder-only closing returns
+    // as a timelocked path once deadlines live on-chain.
+    pub coordinator: Signer<'info>,
     #[account(
         mut,
         seeds = [b"job", job_id.as_ref()],
         bump = job_escrow.bump,
         // Only the original funder reclaims, and close returns every lamport.
         has_one = funder,
+        has_one = coordinator,
         close = funder
     )]
     pub job_escrow: Account<'info, JobEscrow>,
