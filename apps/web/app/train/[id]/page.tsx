@@ -47,7 +47,15 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
   const popRef = useRef<Uint8Array[]>([]);
   const bestGenomeRef = useRef<Uint8Array | null>(null);
   const runningRef = useRef(false);
-  const replayRef = useRef<{ trace: DataView; tick: number } | null>(null);
+  // Flock replay: EVERY bird of a captured generation flies at once,
+  // color-graded by fitness (dim red = died early, bright gold = mastered).
+  const replayRef = useRef<{
+    traces: { dv: DataView; nTicks: number; score: number }[];
+    maxScore: number;
+    nPipes: number;
+    pipesDv: DataView | null;
+    tick: number;
+  } | null>(null);
 
   const refreshLeaderboard = () => {
     fetchJobCandidates(id).then((r) => setLeaderboard(r.candidates as never)).catch(() => {});
@@ -92,8 +100,10 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       if (genBest.s > best || bestGenomeRef.current === null) {
         bestGenomeRef.current = genBest.gg.slice();
         setBest(genBest.s);
-        startReplay(mod, genBest.gg);
       }
+      // Re-capture the whole flock every 5 generations (tracing 96 genomes
+      // is ~100ms — cheap, but not every-frame cheap).
+      if (g % 5 === 1) captureFlock(mod, scored);
       g += 1;
       setGen(g);
       setHistory((h) => [...h.slice(-199), { gen: g, best: Number(genBest.s) }]);
@@ -119,10 +129,21 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
     setRunning(false);
   }
 
-  function startReplay(mod: SieveWorkerModule, genome: Uint8Array): void {
+  function captureFlock(mod: SieveWorkerModule, scored: { gg: Uint8Array; s: bigint }[]): void {
     try {
-      const trace = mod.traceCandidate(genome, paramsJson);
-      replayRef.current = { trace: new DataView(trace.buffer, trace.byteOffset, trace.byteLength), tick: 0 };
+      const traces = scored.map(({ gg, s }) => {
+        const t = mod.traceCandidate(gg, paramsJson);
+        const dv = new DataView(t.buffer, t.byteOffset, t.byteLength);
+        return { dv, nTicks: dv.getUint32(0, true), score: Number(s) };
+      });
+      const first = traces[0]!;
+      replayRef.current = {
+        traces,
+        maxScore: Math.max(1, ...traces.map((t) => t.score)),
+        nPipes: first.dv.getUint32(8, true),
+        pipesDv: first.dv,
+        tick: 0,
+      };
     } catch {
       replayRef.current = null;
     }
@@ -144,33 +165,42 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       if (!rep) {
         ctx.fillStyle = "#6b6b70";
         ctx.font = "13px monospace";
-        ctx.fillText("start evolution to see the best bird fly", 24, H / 2);
+        ctx.fillText("start evolution to watch the whole generation fly", 24, H / 2);
         return;
       }
-      const dv = rep.trace;
-      const nTicks = dv.getUint32(0, true);
-      const nPipes = dv.getUint32(8, true);
-      if (nTicks === 0) return;
-      const t = rep.tick % nTicks;
-      const yOff = 12 + nPipes * 4 + t * 4;
-      if (yOff + 2 > dv.byteLength) { rep.tick = 0; return; }
-      const birdY = dv.getInt16(yOff, true) * (H / WORLD_H);
+      const longest = Math.max(1, ...rep.traces.map((t) => t.nTicks));
+      const t = rep.tick % longest;
       const scroll = t * PIPE_SPEED;
-      // pipes
-      ctx.fillStyle = "#3a3325";
-      for (let i = 0; i < nPipes; i++) {
-        const px = FIRST_PIPE_X + i * PIPE_SPACING - scroll;
-        if (px + PIPE_W < 0 || px > W) continue;
-        const gc = dv.getInt32(12 + i * 4, true) * (H / WORLD_H);
+      // pipes (course is shared — read from the first trace)
+      if (rep.pipesDv) {
+        ctx.fillStyle = "#3a3325";
         const gap = (PIPE_GAP * H) / WORLD_H / 2;
-        ctx.fillRect(px, 0, PIPE_W, gc - gap);
-        ctx.fillRect(px, gc + gap, PIPE_W, H - gc - gap);
+        for (let i = 0; i < rep.nPipes; i++) {
+          const px = FIRST_PIPE_X + i * PIPE_SPACING - scroll;
+          if (px + PIPE_W < 0 || px > W) continue;
+          const gc = rep.pipesDv.getInt32(12 + i * 4, true) * (H / WORLD_H);
+          ctx.fillRect(px, 0, PIPE_W, gc - gap);
+          ctx.fillRect(px, gc + gap, PIPE_W, H - gc - gap);
+        }
       }
-      // bird
-      ctx.fillStyle = "#e0b64a";
-      ctx.beginPath();
-      ctx.arc(BIRD_X, birdY, 8, 0, Math.PI * 2);
-      ctx.fill();
+      // the flock: fitness → hue (dim red 0deg → bright gold 48deg); dead
+      // birds freeze at their last tick and fade.
+      for (const tr of rep.traces) {
+        const alive = t < tr.nTicks;
+        const shownTick = alive ? t : tr.nTicks - 1;
+        const yOff = 12 + rep.nPipes * 4 + shownTick * 4;
+        if (yOff + 2 > tr.dv.byteLength || tr.nTicks === 0) continue;
+        const y = tr.dv.getInt16(yOff, true) * (H / WORLD_H);
+        const fit = tr.score / rep.maxScore;
+        const hue = 4 + 44 * fit;
+        const light = 42 + 26 * fit;
+        ctx.globalAlpha = alive ? 0.35 + 0.55 * fit : 0.08;
+        ctx.fillStyle = `hsl(${hue} 78% ${light}%)`;
+        ctx.beginPath();
+        ctx.arc(BIRD_X, y, alive && fit > 0.98 ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
       rep.tick += 1;
     };
     raf = requestAnimationFrame(draw);
@@ -240,7 +270,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
-        <Panel label="◢ best bird, live replay" right={best >= 0n ? `fitness ${best}` : "—"}>
+        <Panel label="◢ generation replay — every bird, graded by fitness" right={best >= 0n ? `fitness ${best}` : "—"}>
           <canvas ref={canvasRef} width={720} height={420} style={{ width: "100%", background: "#0a0a0c" }} />
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             {!running ? (
