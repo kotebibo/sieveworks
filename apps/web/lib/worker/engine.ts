@@ -114,11 +114,19 @@ export class ContributeEngine {
         const advanced = await this.runOneChunk(jobId);
         if (!advanced) break;
       } catch (err) {
+        if ((err as Error).message === "STAKE_REQUIRED") {
+          // Paid job needs a bond the connected wallet doesn't have. Stop and
+          // let the UI prompt for a stake, rather than looping forever.
+          this.emit({ status: "stake_required" });
+          this.logLine("this bounty pays real SOL — stake a worker bond to earn on it");
+          break;
+        }
         this.logLine(`error: ${(err as Error).message} — retrying in 5s`);
         await new Promise((r) => setTimeout(r, 5000));
       }
     }
-    this.stop();
+    if (this.stats.status !== "stake_required") this.stop();
+    else { this.running = false; for (const w of this.workers) w.terminate(); this.workers = []; }
   }
 
   private async runOneChunk(jobId: string): Promise<boolean> {
@@ -131,6 +139,7 @@ export class ContributeEngine {
       this.logLine("job drained — no pending chunks");
       return false;
     }
+    if (leaseRes.status === 402) throw new Error("STAKE_REQUIRED");
     if (!leaseRes.ok) throw new Error(`lease → ${leaseRes.status}`);
     const assignment = ChunkAssignment.parse(await leaseRes.json());
     this.emit({ currentChunk: assignment.chunk_id });

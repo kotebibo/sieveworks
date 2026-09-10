@@ -25,6 +25,8 @@ declare_id!("BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf");
 // Unstake cooldown in slots (~0.4s/slot on Solana → ~1 hour). A worker can't
 // stake, grab paid work, then instantly pull the bond before an audit lands.
 const UNSTAKE_COOLDOWN_SLOTS: u64 = 9_000;
+/// Solana's incinerator — lamports sent here are burned by the runtime.
+const INCINERATOR: Pubkey = pubkey!("1nc1nerator11111111111111111111111111111111");
 
 #[program]
 pub mod sieveworks {
@@ -183,14 +185,20 @@ pub mod sieveworks {
     /// into the job escrow (returned to the buyer's pool) rather than to the
     /// coordinator — the coordinator must never profit from slashing, or it
     /// gains an incentive to slash honest workers.
-    pub fn slash(ctx: Context<Slash>, amount: u64) -> Result<()> {
+    pub fn slash(ctx: Context<Slash>, _job_id: [u8; 16], amount: u64) -> Result<()> {
         let stake = &mut ctx.accounts.worker_stake;
         let slash_amount = amount.min(stake.amount);
         stake.amount -= slash_amount;
         stake.state = StakeState::Slashed as u8;
 
+        // BURN, don't redistribute. Slashed lamports go to Solana's incinerator
+        // — nobody receives them. If they flowed to the coordinator it would
+        // gain an incentive to slash honestly; if they flowed to the funder or
+        // to other contributors, a Sybil could slash one identity and reclaim
+        // the funds through another. Destroying the value is the only
+        // un-gameable deterrent. (Verifiable on-chain: slashed → incinerator.)
         **stake.to_account_info().try_borrow_mut_lamports()? -= slash_amount;
-        **ctx.accounts.job_escrow.to_account_info().try_borrow_mut_lamports()? += slash_amount;
+        **ctx.accounts.incinerator.try_borrow_mut_lamports()? += slash_amount;
         emit!(WorkerSlashed { worker: stake.worker, amount: slash_amount });
         Ok(())
     }
@@ -313,8 +321,10 @@ pub struct Claim<'info> {
 #[instruction(job_id: [u8; 16])]
 pub struct Slash<'info> {
     pub coordinator: Signer<'info>,
+    // Only for the coordinator-authority check: each escrow was initialized
+    // with the coordinator's pubkey, so has_one proves the signer is it. The
+    // escrow receives nothing now (slashed funds are burned).
     #[account(
-        mut,
         seeds = [b"job", job_id.as_ref()],
         bump = job_escrow.bump,
         has_one = coordinator
@@ -322,6 +332,10 @@ pub struct Slash<'info> {
     pub job_escrow: Account<'info, JobEscrow>,
     #[account(mut)]
     pub worker_stake: Account<'info, WorkerStake>,
+    /// Solana's incinerator: lamports credited here are burned. Constrained
+    /// to the canonical address so nothing else can receive a slash.
+    #[account(mut, address = INCINERATOR)]
+    pub incinerator: SystemAccount<'info>,
 }
 
 #[derive(Accounts)]

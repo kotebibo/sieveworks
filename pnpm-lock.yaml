@@ -23,6 +23,9 @@ importers:
       '@sieveworks/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@sieveworks/wasm-runtime':
+        specifier: workspace:*
+        version: link:../../packages/wasm-runtime
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

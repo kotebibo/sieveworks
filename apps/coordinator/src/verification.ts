@@ -18,7 +18,7 @@ import { bucketDigest16 } from "@sieveworks/wasm-runtime";
 import { createHash } from "node:crypto";
 import { candidatePool } from "./candidates.js";
 import type { BucketPool } from "./bucketPool.js";
-import { attestFind, chainEnabled } from "./chain.js";
+import { attestFind, chainEnabled, slashStake } from "./chain.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
@@ -880,7 +880,29 @@ async function rejectResult(
     where id = ${ctx.chunkId}`;
   await deps.leases.clear(ctx.chunkId);
   events.emit("chunk_rejected", { chunk_id: ctx.chunkId, job_id: ctx.jobId });
-  // Slash decision is recorded in detail.slash; the on-chain burn is Day 4.
+
+  // Slash-on-cheat: a proven fraud burns the worker's bond (slash →
+  // incinerator, never to us or the funder). Fire-and-forget — a devnet
+  // hiccup must never stall the pipeline; the rejection already stands.
+  // Only priced jobs have a stake to slash; the staker is the payout wallet.
+  if (detail.slash === true && chainEnabled()) {
+    void (async () => {
+      const [row] = await sql<{ req_stake: string; staker: string | null; wallet: string }[]>`
+        select j.required_stake_lamports::text as req_stake,
+               u.payout_address as staker, u.wallet_address as wallet
+        from jobs j, users u
+        where j.id = ${ctx.jobId} and u.id = ${ctx.workerId}`;
+      const reqStake = BigInt(row?.req_stake ?? "0");
+      const staker = row?.staker ?? row?.wallet;
+      if (reqStake <= 0n || !staker) return;
+      const sig = await slashStake(ctx.jobId, staker, reqStake);
+      if (sig) {
+        await sql`update worker_stakes set state = 'slashed', slashed_at = now(), last_slash_sig = ${sig}
+                  where worker_id = ${ctx.workerId}`;
+        events.emit("worker_slashed", { job_id: ctx.jobId, tx_signature: sig });
+      }
+    })().catch((e) => console.error(`[chain] slash-on-reject failed for result ${resultId}:`, e));
+  }
 }
 
 function sampleIndices(count: number, max: number): number[] {

@@ -142,6 +142,13 @@ export async function fetchSpecs(token?: string | null): Promise<{ specs: Worker
 }
 export const specArtifactUrl = (hash: string) => `${COORDINATOR_URL}/v1/specs/${hash}/artifact`;
 
+export interface StakeStatus { wallet: string; amount_lamports: string; state: number | null; program_id: string; coordinator: string | null; }
+export async function fetchStakeStatus(wallet: string): Promise<StakeStatus> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/stake?wallet=${wallet}`);
+  if (!res.ok) throw new Error(`stake status → ${res.status}`);
+  return (await res.json()) as StakeStatus;
+}
+
 export async function fetchModuleViz(hash: string): Promise<string | null> {
   const res = await fetch(`${COORDINATOR_URL}/v1/specs/${hash}/viz`);
   if (!res.ok) return null;

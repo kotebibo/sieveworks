@@ -13,6 +13,9 @@ import {
   recordFindIx,
   uuidToBytes,
   closeJobIx,
+  slashIx,
+  stakePda,
+  decodeWorkerStake,
   type JobEscrowAccount,
 } from "@sieveworks/chain";
 import { env } from "./env.js";
@@ -148,4 +151,34 @@ export function expectedClaimIx(args: {
     cumulativeLamports: args.cumulativeLamports,
     nonce: args.nonce,
   });
+}
+
+/** Read a worker's on-chain stake (active bond amount + state). Returns null
+ * when the account doesn't exist (never staked) or the chain rail is off. */
+export async function fetchStake(worker: string): Promise<{ amount: bigint; state: number } | null> {
+  init();
+  if (!connection) return null;
+  try {
+    const acc = await connection.getAccountInfo(stakePda(new PublicKey(worker)));
+    if (!acc) return null;
+    const s = decodeWorkerStake(new Uint8Array(acc.data));
+    return { amount: s.amount, state: s.state };
+  } catch {
+    return null;
+  }
+}
+
+/** Burn a caught cheat's bond (coordinator-signed slash → incinerator). Fire
+ * safely: any failure is logged, never throws into the pipeline. */
+export async function slashStake(jobUuid: string, worker: string, amountLamports: bigint): Promise<string | null> {
+  init();
+  if (!connection || !authority) return null;
+  try {
+    const ix = slashIx({ jobUuid, coordinator: authority.publicKey, worker: new PublicKey(worker), amountLamports });
+    const tx = new Transaction().add(ix);
+    return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
+  } catch (err) {
+    console.error(`[chain] slash failed for ${worker}:`, err);
+    return null;
+  }
 }

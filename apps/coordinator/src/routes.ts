@@ -28,6 +28,7 @@ import {
   expectedClaimIx,
   expectedCloseIx,
   fetchJobEscrow,
+  fetchStake,
   getChainInfo,
 } from "./chain.js";
 
@@ -115,6 +116,14 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       honeypots: result.honeypots,
       status: result.status,
     };
+  });
+
+  // Worker's on-chain stake status (for the staking UI + lease pre-checks).
+  app.get("/v1/stake", async (req, reply) => {
+    const { wallet } = req.query as { wallet?: string };
+    if (!wallet) return reply.code(400).send({ error: "wallet required" });
+    const st = await fetchStake(wallet);
+    return { wallet, amount_lamports: (st?.amount ?? 0n).toString(), state: st?.state ?? null, ...getChainInfo() };
   });
 
   // ---- on-chain settlement (devnet) --------------------------------------
@@ -631,7 +640,8 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const { job_id, wallet_address, payout_address } = parsed.data;
 
     const [job] = await sql`
-      select id, worker_spec_hash, bucket_size, params, lease_ttl_seconds, status
+      select id, worker_spec_hash, bucket_size, params, lease_ttl_seconds, status,
+             price_per_chunk_lamports::text as price, required_stake_lamports::text as req_stake
       from jobs where id = ${job_id}`;
     if (!job || job.status !== "open") return reply.code(404).send({ error: "job not open" });
 
@@ -640,6 +650,24 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       on conflict (wallet_address) do update set
         payout_address = coalesce(${payout_address ?? null}, users.payout_address)
       returning id`;
+
+    // Stake gate (paid work only): the payout identity — the connected wallet
+    // that will be paid — must hold a bond ≥ the job's required stake. Free
+    // bounties skip this entirely, so browser onboarding stays frictionless.
+    // A caught cheat's bond is burned (slash → incinerator).
+    const reqStake = BigInt(job.req_stake ?? "0");
+    if (reqStake > 0n) {
+      const staker = payout_address ?? wallet_address;
+      const st = await fetchStake(staker);
+      if (!st || st.amount < reqStake) {
+        return reply.code(402).send({
+          error: "stake required",
+          required_stake_lamports: reqStake.toString(),
+          have_lamports: (st?.amount ?? 0n).toString(),
+          staker,
+        });
+      }
+    }
 
     const nonce = randomBytes(16).toString("hex");
     const ttl = job.lease_ttl_seconds as number;

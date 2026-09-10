@@ -4,6 +4,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchJobs, type JobSummary } from "@/lib/api";
 import { ContributeEngine, type EngineStats } from "@/lib/worker/engine";
+import { StakePanel } from "@/components/StakePanel";
 import { Badge, Button, LiveNum, Mono, Stat, fmt } from "@/components/ui";
 import { WalletButton } from "@/lib/wallet";
 
@@ -90,6 +91,18 @@ export default function Contribute() {
           )}
         </div>
       </div>
+
+      {stats?.status === "stake_required" && (
+        <div className="panel ticked mt-4 p-4" style={{ borderColor: "var(--accent)" }}>
+          <div className="barlabel mb-1" style={{ color: "var(--accent)" }}>stake to earn on this bounty</div>
+          <p className="text-[13px] text-[var(--text-dim)] mb-3">
+            This bounty pays real SOL, so it requires a one-time worker bond — a
+            deposit you lose only if you're caught cheating. Free bounties never
+            need one. Stake once and you can earn on every paid bounty.
+          </p>
+          <StakePanel compact />
+        </div>
+      )}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="status" value={stats?.status ?? "idle"} />

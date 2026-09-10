@@ -24,6 +24,7 @@ import {
  */
 
 export const PROGRAM_ID = new PublicKey("BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf");
+export const INCINERATOR = new PublicKey("1nc1nerator11111111111111111111111111111111");
 
 // sha256("global:<name>")[0..8] — precomputed, see header comment.
 const DISC = {
@@ -31,6 +32,9 @@ const DISC = {
   record_find: Uint8Array.from([247, 136, 26, 112, 14, 245, 169, 83]),
   claim: Uint8Array.from([62, 198, 214, 193, 213, 159, 108, 210]),
   close_job: Uint8Array.from([90, 100, 180, 200, 200, 163, 120, 182]),
+  stake: Uint8Array.from([206, 176, 202, 18, 200, 209, 179, 108]),
+  unstake: Uint8Array.from([90, 95, 107, 42, 205, 124, 50, 225]),
+  slash: Uint8Array.from([204, 141, 18, 161, 8, 177, 92, 142]),
 } as const;
 
 // sha256("account:JobEscrow")[0..8] — Anchor account data starts with this.
@@ -235,4 +239,63 @@ export function closeJobIx(args: {
     ],
     data: concat(DISC.close_job, jobId),
   });
+}
+
+/** Stake a worker bond (one global account per worker; top-ups add to it).
+ * init_if_needed on the program side, so the first call creates it. */
+export function stakeIx(args: { worker: PublicKey; amountLamports: bigint }): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: args.worker, isSigner: true, isWritable: true },
+      { pubkey: stakePda(args.worker), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: concat(DISC.stake, u64le(args.amountLamports)),
+  });
+}
+
+/** Withdraw the whole bond after the cooldown (program enforces the wait). */
+export function unstakeIx(args: { worker: PublicKey }): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: args.worker, isSigner: true, isWritable: true },
+      { pubkey: stakePda(args.worker), isSigner: false, isWritable: true },
+    ],
+    data: concat(DISC.unstake),
+  });
+}
+
+/** Slash a caught cheat's bond — BURNED to the incinerator, never to us or
+ * the funder (see the program comment). Coordinator-signed; job context only
+ * supplies the coordinator-authority check. */
+export function slashIx(args: {
+  jobUuid: string;
+  coordinator: PublicKey;
+  worker: PublicKey;
+  amountLamports: bigint;
+}): TransactionInstruction {
+  const jobId = uuidToBytes(args.jobUuid);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: args.coordinator, isSigner: true, isWritable: false },
+      { pubkey: jobEscrowPda(jobId), isSigner: false, isWritable: false },
+      { pubkey: stakePda(args.worker), isSigner: false, isWritable: true },
+      { pubkey: INCINERATOR, isSigner: false, isWritable: true },
+    ],
+    data: concat(DISC.slash, jobId, u64le(args.amountLamports)),
+  });
+}
+
+export interface WorkerStakeAccount { worker: PublicKey; amount: bigint; state: number; }
+/** Decode a WorkerStake account (8-byte anchor disc, then worker/amount/state). */
+export function decodeWorkerStake(data: Uint8Array): WorkerStakeAccount {
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return {
+    worker: new PublicKey(data.slice(8, 40)),
+    amount: dv.getBigUint64(40, true),
+    state: data[48]!,
+  };
 }

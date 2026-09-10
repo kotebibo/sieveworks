@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { claimIx } from "@sieveworks/chain";
+import { StakePanel } from "@/components/StakePanel";
 import {
   explorerTx, fetchClaimVoucher, fetchClaims, fetchMe, fetchNotifications, solStr, submitClaim, updateMe,
   type ClaimRow, type Me, type Notification,
@@ -86,6 +87,11 @@ export default function Account() {
           <button onClick={save} className="font-medium text-[13px] px-4 py-2 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Save</button>
           {saved && <span className="num text-xs" style={{ color: "var(--verified)" }}>saved ✓</span>}
         </div>
+      </section>
+
+      <section className="panel mt-4">
+        <div className="border-b border-[var(--border)] px-4 py-2 barlabel">Worker bond (stake)</div>
+        <div className="px-4 py-4"><StakePanel /></div>
       </section>
 
       <ClaimsSection />

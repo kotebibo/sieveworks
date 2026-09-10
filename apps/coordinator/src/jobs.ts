@@ -15,6 +15,15 @@ const DEFAULT_TARGET_SECONDS = 30;
 const MAX_CHUNKS_PER_JOB = 20_000;
 // Dust floor for priced bounties: 1000 lamports (0.000001 SOL) per chunk.
 const MIN_PRICE_LAMPORTS = 1000n;
+// Stake floor for LEASED paid work (coverage + training). One-time global
+// bond per worker; slashed (burned) on a caught cheat. Big enough that a
+// caught cheater loses more than a few chunks' pay; poster may raise it.
+const STAKE_FLOOR_LAMPORTS = 20_000_000n; // 0.02 SOL
+function requiredStake(price: bigint, override?: bigint): bigint {
+  if (price <= 0n) return 0n; // free work needs no bond (frictionless onboarding)
+  const base = price * 15n > STAKE_FLOOR_LAMPORTS ? price * 15n : STAKE_FLOOR_LAMPORTS;
+  return override !== undefined && override > base ? override : base;
+}
 
 export const CreateJobRequest = z.object({
   title: z.string().min(1).max(200),
@@ -31,6 +40,7 @@ export const CreateJobRequest = z.object({
   budget_lamports: z.coerce.bigint().nonnegative().default(0n),
   price_per_chunk_lamports: z.coerce.bigint().nonnegative().default(0n),
   lease_ttl_seconds: z.number().int().min(30).max(3600).default(180),
+  required_stake_lamports: z.coerce.bigint().nonnegative().optional(),
   // Prize bounties (Spec 02): winner-takes-prize for the best verified
   // candidate above threshold_score by deadline_at. No chunks/leases.
   bounty_kind: z.enum(["coverage", "prize", "training"]).default("coverage"),
@@ -161,12 +171,13 @@ export async function createJob(
     insert into jobs (creator_id, title, description, game, worker_spec_hash, version_pin,
                       params, search_space_start, search_space_end, chunk_size, bucket_size,
                       budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds,
-                      verification_mode)
+                      verification_mode, required_stake_lamports)
     values (${creator!.id}, ${req.title}, ${req.description ?? null}, ${req.game},
             ${workerSpecHash}, ${req.version_pin}, ${sql.json(req.params as never)},
             ${start.toString()}, ${end.toString()}, ${chunkSize.toString()}, ${req.bucket_size},
             ${req.budget_lamports.toString()}, ${req.price_per_chunk_lamports.toString()},
-            ${status}, ${req.lease_ttl_seconds}, ${verificationMode})
+            ${status}, ${req.lease_ttl_seconds}, ${verificationMode},
+            ${requiredStake(price, req.required_stake_lamports).toString()})
     returning id`;
   const jobId = job!.id;
 
@@ -292,12 +303,12 @@ async function createTrainingJob(
     insert into jobs (creator_id, title, description, game, worker_spec_hash, version_pin,
                       params, search_space_start, search_space_end, chunk_size, bucket_size,
                       budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds,
-                      verification_mode, bounty_kind)
+                      verification_mode, bounty_kind, required_stake_lamports)
     values (${creator!.id}, ${req.title}, ${req.description ?? null}, ${req.game},
             ${req.worker_spec_hash}, ${req.version_pin}, ${sql.json(req.params as never)},
             0, ${(BigInt(M) * perLineage).toString()}, ${TRAIN_G}, ${TRAIN_B},
             ${budget.toString()}, ${price.toString()}, ${status}, ${req.lease_ttl_seconds},
-            'training', 'training')
+            'training', 'training', ${requiredStake(price, req.required_stake_lamports).toString()})
     returning id`;
   const jobId = job!.id;
 
