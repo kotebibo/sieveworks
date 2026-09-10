@@ -44,6 +44,16 @@ export async function fetchJobOutputs(jobId: string): Promise<JobOutputs> {
   return (await res.json()) as JobOutputs;
 }
 
+export interface JobLineages {
+  lineages: { idx: number; generations_done: string; best_score: string | null; best_genome_b64: string | null; updated_at: string }[];
+}
+
+export async function fetchJobLineages(jobId: string): Promise<JobLineages> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}/lineages`);
+  if (!res.ok) throw new Error(`lineages fetch failed: ${res.status}`);
+  return (await res.json()) as JobLineages;
+}
+
 export interface JobCandidates {
   candidates: { id: string; verified_score: string; state: string; submitted_at: string; wallet_address: string; candidate_b64: string | null }[];
   revealed: boolean;

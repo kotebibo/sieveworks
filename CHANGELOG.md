@@ -3,6 +3,25 @@
 All Crypto World's Fair work (Sep 14 – Oct 12, 2026) is logged here, newest
 first.
 
+## 2026-09-11 (night) — Paid-per-generation training verified on prod
+
+The third verification mode: workers are paid per chunk of TRAINING WORK
+(8,192 generations of a deterministic in-module GA), verified without
+redundancy via chain-of-checkpoint transition audits.
+
+- The GA runs INSIDE the module with counter-chained randomness, so the
+  honest chain is UNIQUE: origin forced by sha256(job‖lineage), every
+  audited bucket recomputed server-side from the worker-provided (and
+  commitment-anchored) start state.
+- Island-model lineages ride the existing chunk machinery; each delivered
+  final state rolls the successor chunk. Delivery gates payment.
+- Proven on prod: honest forced-audit chunk (challenged incl. bucket 0)
+  accepted+paid; a fabricated-tail cheat caught at the transition audit,
+  rejected, unpaid. 7 chunks / 57k generations trained across 4 lineages.
+- The month's one program change deployed: on-chain close_job now requires
+  the coordinator's co-signature — a prize funder can no longer sweep the
+  escrow mid-competition.
+
 ## 2026-09-11 (later) — Prize bounties + "AI learns to fly" live on prod
 
 - **Prize bounties**: fund a winner-takes-all pot for the best verified

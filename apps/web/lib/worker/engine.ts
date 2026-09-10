@@ -77,7 +77,7 @@ export class ContributeEngine {
   }
 
   private payoutAddress: string | undefined;
-  private mode: "witness_extremum" | "output_hash" = "witness_extremum";
+  private mode: "witness_extremum" | "output_hash" | "training" = "witness_extremum";
 
   async start(jobId: string, threads: number, payoutAddress?: string): Promise<void> {
     if (this.running) return;
@@ -92,7 +92,7 @@ export class ContributeEngine {
     // on the same rails. wasm-runtime verifies the hash before instantiation.
     const job = await (await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}`)).json();
     const specHash = job.job.worker_spec_hash as string;
-    this.mode = (job.job.verification_mode as "witness_extremum" | "output_hash" | undefined) ?? "witness_extremum";
+    this.mode = (job.job.verification_mode as "witness_extremum" | "output_hash" | "training" | undefined) ?? "witness_extremum";
     const wasmBytes = await (await fetch(`${COORDINATOR_URL}/v1/specs/${specHash}/artifact`)).arrayBuffer();
 
     this.workers = [];
@@ -134,6 +134,8 @@ export class ContributeEngine {
     if (!leaseRes.ok) throw new Error(`lease → ${leaseRes.status}`);
     const assignment = ChunkAssignment.parse(await leaseRes.json());
     this.emit({ currentChunk: assignment.chunk_id });
+
+    if (this.mode === "training") return this.runTrainingChunk(assignment);
 
     const start = BigInt(assignment.range_start);
     const end = BigInt(assignment.range_end);
@@ -290,6 +292,139 @@ export class ContributeEngine {
       this.emit({ currentChunk: null });
       this.logLine(`chunk rejected`);
     }
+    return true;
+  }
+
+  /** Training chunks are ONE lineage segment — sequential by construction,
+   * so a single thread runs the whole chunk (parallelism comes from many
+   * lineages). Host resolves the start state, retains checkpoint states for
+   * challenges, and delivers the final state (which is what gets paid). */
+  private async runTrainingChunk(assignment: ChunkAssignment): Promise<boolean> {
+    const p = assignment.params as { lineage_id?: string; generation_offset?: string };
+    const paramsJson = JSON.stringify(assignment.params);
+    const saltHex = assignment.job_id.replace(/-/g, "").toLowerCase();
+    const start = BigInt(assignment.range_start);
+    const end = BigInt(assignment.range_end);
+    this.chunkSeedsTotal = Number(end - start);
+    this.chunkSeedsDone = 0;
+    const t0 = performance.now();
+
+    // Origin: derive for generation 0 (pure function both sides compute),
+    // else fetch the predecessor's delivered state.
+    let stateB64: string;
+    if (!p.generation_offset || p.generation_offset === "0") {
+      const seedBytes = new Uint8Array(
+        await crypto.subtle.digest("SHA-256",
+          new TextEncoder().encode(`sieveworks-lineage:${assignment.job_id}:${p.lineage_id}`))
+      );
+      let bin = "";
+      for (const b of seedBytes) bin += String.fromCharCode(b);
+      stateB64 = `seed:${btoa(bin)}`;
+    } else {
+      const res = await fetch(`${COORDINATOR_URL}/v1/chunks/${assignment.chunk_id}/origin-state?wallet=${this.wallet}`);
+      if (!res.ok) throw new Error(`origin state → ${res.status}`);
+      stateB64 = ((await res.json()) as { state_b64: string }).state_b64;
+    }
+
+    const w = this.workers[0]!;
+    const result = await new Promise<{
+      leaves: { index: number; maxScore: string; maxSeed: string }[];
+      states: ArrayBuffer[];
+      finalState: ArrayBuffer;
+      witness: ArrayBuffer;
+    }>((resolve, reject) => {
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (m.type === "progress") this.onProgress(m.seedsDone);
+        if (m.type === "done") resolve(m);
+        if (m.type === "error") reject(new Error(m.error));
+      };
+      w.postMessage({
+        type: "eval",
+        taskId: 0,
+        rangeStart: assignment.range_start,
+        rangeEnd: assignment.range_end,
+        bucketSize: assignment.bucket_size,
+        baseIndex: 0,
+        paramsJson,
+        mode: "training",
+        saltHex,
+        stateB64,
+      });
+    });
+
+    const leaves: BucketLeaf[] = result.leaves.map((l) => ({
+      index: l.index, maxScore: BigInt(l.maxScore), maxSeed: BigInt(l.maxSeed),
+    }));
+    const root = toHex(merkleRoot(leaves.map(hashLeaf)));
+    const wv = new DataView(result.witness);
+    const bestScore = wv.getBigInt64(0, true);
+    const bestGenome = new Uint8Array(result.witness, 8);
+    const toB64 = (buf: ArrayBuffer | Uint8Array) => {
+      const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      return btoa(bin);
+    };
+
+    const unsigned: UnsignedResult = {
+      chunk_id: assignment.chunk_id,
+      worker_spec_hash: assignment.worker_spec_hash,
+      mode: "training",
+      extremum_score: bestScore.toString(),
+      best_candidate_b64: toB64(bestGenome),
+      merkle_root: root,
+      buckets_count: leaves.length,
+      seeds_evaluated: (end - start).toString(),
+      duration_ms: Math.round(performance.now() - t0),
+      nonce: assignment.nonce,
+    };
+    const submission = { ...unsigned, signature: signResult(unsigned, this.seed) };
+    const submitRes = await fetch(`${COORDINATOR_URL}/v1/results`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(submission),
+    });
+    if (!submitRes.ok) throw new Error(`submit → ${submitRes.status}`);
+    let verdict = SubmissionResponse.parse(await submitRes.json());
+
+    if (verdict.status === "challenged" && verdict.challenge) {
+      const hashes = leaves.map(hashLeaf);
+      const idxs = verdict.challenge.bucket_indices;
+      this.logLine(`transition audit on ${idxs.length} bucket(s) — answering with checkpoint states`);
+      const answer = {
+        result_id: verdict.result_id,
+        leaves: idxs.map((i) => ({ index: i, max_score: leaves[i]!.maxScore.toString(), max_seed: leaves[i]!.maxSeed.toString() })),
+        proofs: idxs.map((i) => merkleProof(hashes, i).map(toHex)),
+        states_b64: idxs.map((i) => (i === 0 ? "" : toB64(result.states[i]!))),
+        prev_leaves: idxs.map((i) => (i === 0 ? null : { index: i - 1, max_score: leaves[i - 1]!.maxScore.toString(), max_seed: leaves[i - 1]!.maxSeed.toString() })),
+        prev_proofs: idxs.map((i) => (i === 0 ? null : merkleProof(hashes, i - 1).map(toHex))),
+      };
+      const judged = await fetch(`${COORDINATOR_URL}/v1/challenge-response`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(answer),
+      });
+      if (!judged.ok) throw new Error(`challenge response → ${judged.status}`);
+      const j = (await judged.json()) as { status: "accepted" | "rejected" };
+      verdict = { result_id: verdict.result_id, status: j.status };
+    }
+
+    if (verdict.status !== "accepted") {
+      this.emit({ currentChunk: null });
+      this.logLine("chunk rejected");
+      return true;
+    }
+
+    const lastIdx = leaves.length - 1;
+    const put = await fetch(`${COORDINATOR_URL}/v1/results/${verdict.result_id}/outputs`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state_b64: toB64(result.finalState),
+        last_leaf: { index: lastIdx, max_score: leaves[lastIdx]!.maxScore.toString(), max_seed: leaves[lastIdx]!.maxSeed.toString() },
+        proof: merkleProof(leaves.map(hashLeaf), lastIdx).map(toHex),
+      }),
+    });
+    if (!put.ok) throw new Error(`state delivery → ${put.status}`);
+    this.emit({ sessionChunks: this.stats.sessionChunks + 1, currentChunk: null });
+    this.logLine(`lineage advanced · best ${bestScore} · state delivered`);
     return true;
   }
 

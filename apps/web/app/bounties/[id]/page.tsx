@@ -9,7 +9,9 @@ import {
   fetchChainInfo,
   fetchJob,
   fetchJobResults,
+  fetchJobLineages,
   fetchJobSwarm,
+  type JobLineages,
   notifyFunded,
   closeFundingReq,
   resultsCsvUrl,
@@ -28,12 +30,14 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [results, setResults] = useState<RecentResult[]>([]);
   const [cells, setCells] = useState("");
+  const [lineages, setLineages] = useState<JobLineages["lineages"]>([]);
 
   useEffect(() => {
     const refresh = () => {
       fetchJob(id).then(setDetail).catch(() => {});
       fetchJobResults(id).then((r) => setResults(r.results)).catch(() => {});
       fetchJobSwarm(id).then((r) => setCells(r.cells)).catch(() => {});
+      fetchJobLineages(id).then((r) => setLineages(r.lineages)).catch(() => setLineages([]));
     };
     refresh();
     return subscribeEvents((_e, data) => {
@@ -105,8 +109,29 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         <Panel label="◢ swarm" right={`${fmt(done)} / ${fmt(total)}`}>
           {cells ? <Sieve cells={cells} /> : <div className="h-40 skeleton" />}
         </Panel>
-        <Panel label={String(detail.job.bounty_kind ?? "") === "prize" ? "◆ prize" : isExtremum ? "◆ current record" : "◆ output"}>
-          {String(detail.job.bounty_kind ?? "") === "prize" ? (
+        <Panel label={String(detail.job.bounty_kind ?? "") === "training" ? "◆ training" : String(detail.job.bounty_kind ?? "") === "prize" ? "◆ prize" : isExtremum ? "◆ current record" : "◆ output"}>
+          {String(detail.job.bounty_kind ?? "") === "training" ? (
+            <div className="text-sm space-y-2">
+              <p className="text-[var(--text-dim)] text-xs">
+                Paid per verified chunk of training — {lineages.length} parallel
+                lineages evolving. Every segment is audited by recomputing
+                sampled generation-batches from committed checkpoints.
+              </p>
+              <div className="num text-xs space-y-1">
+                {lineages.slice(0, 8).map((l) => (
+                  <div key={l.idx} className="flex items-center gap-2">
+                    <span className="text-[var(--text-faint)] w-6">L{l.idx}</span>
+                    <span className="text-[var(--text-dim)] w-20">{fmt(Number(l.generations_done))} gen</span>
+                    <span style={{ color: "var(--verified)" }}>
+                      {l.best_score != null ? `${Math.floor(Number(l.best_score) / 10000)} pipes` : "—"}
+                    </span>
+                  </div>
+                ))}
+                {lineages.length === 0 && <span className="text-[var(--text-faint)]">no lineages started yet</span>}
+              </div>
+              <Button href="/contribute" variant="primary">▶ TRAIN THE SWARM</Button>
+            </div>
+          ) : String(detail.job.bounty_kind ?? "") === "prize" ? (
             <div className="text-sm space-y-2">
               <div className="num text-xs space-y-1">
                 <div>prize <span className="text-[var(--accent)] font-display text-xl">◎{solStr(String(detail.job.prize_lamports ?? "0"))}</span></div>

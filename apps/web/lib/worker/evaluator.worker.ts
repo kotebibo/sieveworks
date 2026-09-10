@@ -21,8 +21,9 @@ interface EvalMsg {
   bucketSize: number;
   baseIndex: number; // bucket index of rangeStart within the chunk
   paramsJson: string;
-  mode?: "witness_extremum" | "output_hash";
-  saltHex?: string; // output_hash: job salt for leaf digests
+  mode?: "witness_extremum" | "output_hash" | "training";
+  saltHex?: string; // output_hash/training: job salt for leaf digests
+  stateB64?: string; // training: chunk start state (host resolves origin)
 }
 
 let module_: SieveWorkerModule | null = null;
@@ -49,6 +50,39 @@ self.onmessage = async (e: MessageEvent<InitMsg | EvalMsg>) => {
       const end = BigInt(msg.rangeEnd);
       const bucket = BigInt(msg.bucketSize);
       let index = msg.baseIndex;
+
+      if (msg.mode === "training") {
+        // Sequential by nature: the chunk is ONE lineage segment. Retain
+        // every bucket's START state for transition challenges; the host
+        // keeps them (and the final state for delivery).
+        const salt = new Uint8Array((msg.saltHex ?? "00".repeat(16)).match(/../g)!.map((h) => parseInt(h, 16)));
+        // "seed:<b64 32 bytes>" = origin chunk (derive gen-0 state in-module);
+        // plain b64 = predecessor state fetched by the host.
+        const raw = msg.stateB64 ?? "";
+        let st: Uint8Array;
+        if (raw.startsWith("seed:")) {
+          const seed = Uint8Array.from(atob(raw.slice(5)), (c) => c.charCodeAt(0));
+          st = module_.initState(seed, msg.paramsJson);
+        } else {
+          st = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+        }
+        const nBuckets = Number((end - start) / bucket);
+        const states: ArrayBuffer[] = [];
+        for (let k = 0; k < nBuckets; k++) {
+          states.push(st.slice().buffer as ArrayBuffer);
+          st = module_.advanceBucket(st, msg.paramsJson);
+          const wire = digest16ToWire(bucketDigest16(salt, st));
+          leaves.push({ index: k, maxScore: wire.score, maxSeed: wire.seed });
+          self.postMessage({ type: "progress", taskId: msg.taskId, seedsDone: Number(bucket) });
+        }
+        const witness = module_.bestOfState(st, msg.paramsJson);
+        const finalState = st.slice().buffer as ArrayBuffer;
+        self.postMessage(
+          { type: "done", taskId: msg.taskId, leaves, states, finalState, witness: witness.slice().buffer },
+          { transfer: [...states, finalState] }
+        );
+        return;
+      }
 
       if (msg.mode === "output_hash") {
         // Render each bucket, digest host-side (same helper the coordinator
