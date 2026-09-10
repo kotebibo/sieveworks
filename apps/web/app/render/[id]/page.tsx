@@ -93,12 +93,12 @@ export default function RenderPage({ params }: { params: Promise<{ id: string }>
       </div>
 
       <Panel label="◢ swarm render" right={`${fmt(tiles)} / ${fmt(totalTiles)}`}>
-        <div className="overflow-auto scroll-thin flex justify-center bg-[#0a0a0c] p-2">
+        <div className="overflow-auto scroll-thin flex justify-center rounded-xl bg-[var(--panel-2)] p-3">
           <canvas
             ref={canvasRef}
             width={grid}
             height={grid}
-            style={{ maxWidth: "100%", imageRendering: "pixelated" }}
+            style={{ maxWidth: "100%", imageRendering: "pixelated", borderRadius: 8 }}
           />
         </div>
         <p className="mt-2 text-[11px] text-[var(--text-faint)]">

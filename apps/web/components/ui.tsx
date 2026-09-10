@@ -165,13 +165,13 @@ export function Button({
   disabled?: boolean;
   title?: string;
 }) {
-  const base = "font-medium tracking-wide inline-flex items-center gap-2 px-4 py-2 text-[13px] border transition-colors disabled:opacity-40";
+  const base = "font-semibold tracking-wide inline-flex items-center gap-2 px-4 py-2 text-[13px] rounded-xl border transition-all disabled:opacity-40 disabled:shadow-none";
   const styles =
     variant === "primary"
-      ? "sheen border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--bg)]"
+      ? "sheen border-transparent bg-[var(--accent)] text-white shadow-[var(--shadow-pop)] hover:brightness-110 hover:-translate-y-px"
       : variant === "danger"
-        ? "border-[var(--rejected)] text-[var(--rejected)] hover:bg-[var(--rejected)] hover:text-[var(--bg)]"
-        : "border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--text)]";
+        ? "border-[var(--rejected)] text-[var(--rejected)] hover:bg-[var(--rejected)] hover:text-white"
+        : "border-[var(--border-bright)] bg-[var(--panel)] text-[var(--text-dim)] hover:text-[var(--text)] hover:border-[var(--accent-2)]";
   const cls = `${base} ${styles}`;
   if (href) return <Link href={href} className={cls} title={title}>{children}</Link>;
   return <button className={cls} onClick={onClick} disabled={disabled} title={title}>{children}</button>;

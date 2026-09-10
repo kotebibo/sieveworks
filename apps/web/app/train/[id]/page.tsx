@@ -160,10 +160,13 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const W = canvas.width, H = canvas.height;
-      ctx.fillStyle = "#0a0a0c";
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, "#C4E3FA");
+      sky.addColorStop(1, "#9DCEF2");
+      ctx.fillStyle = sky;
       ctx.fillRect(0, 0, W, H);
       if (!rep) {
-        ctx.fillStyle = "#6b6b70";
+        ctx.fillStyle = "#3A5A78";
         ctx.font = "13px monospace";
         ctx.fillText("start evolution to watch the whole generation fly", 24, H / 2);
         return;
@@ -173,7 +176,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       const scroll = t * PIPE_SPEED;
       // pipes (course is shared — read from the first trace)
       if (rep.pipesDv) {
-        ctx.fillStyle = "#3a3325";
+        ctx.fillStyle = "#4EA362";
         const gap = (PIPE_GAP * H) / WORLD_H / 2;
         for (let i = 0; i < rep.nPipes; i++) {
           const px = FIRST_PIPE_X + i * PIPE_SPACING - scroll;
@@ -192,10 +195,12 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         if (yOff + 2 > tr.dv.byteLength || tr.nTicks === 0) continue;
         const y = tr.dv.getInt16(yOff, true) * (H / WORLD_H);
         const fit = tr.score / rep.maxScore;
-        const hue = 4 + 44 * fit;
-        const light = 42 + 26 * fit;
-        ctx.globalAlpha = alive ? 0.35 + 0.55 * fit : 0.08;
-        ctx.fillStyle = `hsl(${hue} 78% ${light}%)`;
+        // Daylight ramp: struggling birds run hot (red/orange), champions
+        // go green — the owner-picked grading from the reference videos.
+        const hue = 8 + 132 * fit;
+        const light = 46 + 10 * fit;
+        ctx.globalAlpha = alive ? 0.45 + 0.5 * fit : 0.12;
+        ctx.fillStyle = `hsl(${hue} 72% ${light}%)`;
         ctx.beginPath();
         ctx.arc(BIRD_X, y, alive && fit > 0.98 ? 7 : 5, 0, Math.PI * 2);
         ctx.fill();
@@ -271,7 +276,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
 
       <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
         <Panel label="◢ generation replay — every bird, graded by fitness" right={best >= 0n ? `fitness ${best}` : "—"}>
-          <canvas ref={canvasRef} width={720} height={420} style={{ width: "100%", background: "#0a0a0c" }} />
+          <canvas ref={canvasRef} width={720} height={420} style={{ width: "100%", borderRadius: 12 }} />
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             {!running ? (
               <Button variant="primary" onClick={() => void startEvolution()}>▶ {gen === 0 ? "Start evolution" : "Resume"}</Button>

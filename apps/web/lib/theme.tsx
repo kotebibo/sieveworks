@@ -4,17 +4,17 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "dark" | "light";
 const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({
-  theme: "dark",
+  theme: "light",
   toggle: () => {},
 });
 
 /** Applied before paint by an inline script in <head> to avoid a flash; this
  * provider just keeps React state in sync and persists the choice. */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    const stored = (localStorage.getItem("sieveworks-theme") as Theme | null) ?? "dark";
+    const stored = (localStorage.getItem("sieveworks-theme") as Theme | null) ?? "light";
     setTheme(stored);
   }, []);
 
@@ -36,6 +36,6 @@ export const useTheme = () => useContext(ThemeContext);
 /** Inline, runs before first paint — reads storage and sets the class so the
  * correct theme is present in the very first frame (no flash, no CLS). */
 export const themeInitScript = `
-(function(){try{var t=localStorage.getItem('sieveworks-theme')||'dark';
-document.documentElement.classList.add(t);}catch(e){document.documentElement.classList.add('dark');}})();
+(function(){try{var t=localStorage.getItem('sieveworks-theme')||'light';
+document.documentElement.classList.add(t);}catch(e){document.documentElement.classList.add('light');}})();
 `;

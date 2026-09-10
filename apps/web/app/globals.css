@@ -1,54 +1,60 @@
 @import "tailwindcss";
 
 /* ============================================================
-   SIEVEWORKS — DIRECTION: "ASSAY"
-   Metallurgy of verification: brass mesh, technical paper, instruments
-   that measure rather than persuade. Brass accent (not amber — amber is
-   the AI-design tell). Green/red reserved for verified/rejected only.
-   Existing semantic var names are mapped to Assay values so every app
-   page adopts the direction with no per-page changes.
+   SIEVEWORKS — DIRECTION: "DAYLIGHT ARCADE" (owner-picked 2026-09-11)
+   Light-first, rounded, openly friendly: an average person should feel
+   at home. Sky blue is the interactive voice; amber belongs to renders
+   and energy; green/red stay strictly verified/rejected. The living
+   demos (flock, fractal) carry the color — the chrome stays calm.
+   Dark mode is a navy night variant, not the old terminal.
+   Existing semantic var names are preserved so every page adopts the
+   direction with no per-page changes.
    ============================================================ */
-:root, .dark {
-  color-scheme: dark;
-  --bg: #0B0C0E;
-  --panel: #131519;      /* surface */
-  --panel-2: #1B1E23;    /* elevated */
-  --border: #262A30;
-  --border-bright: #343941;
-  --text: #ECEDEF;
-  --text-dim: #969CA5;
-  --text-faint: #868C96;  /* lifted to clear WCAG AA (was #5A606A ≈ 3:1 on bg) */
-  --accent: #D4A62A;     /* brass */
-  --accent-2: #8A6E1C;
-  --accent-dim: #8A6E1C;
-  --accent-ghost: #2a220a;
-  --amber: #D4A62A;      /* legacy alias → brass */
-  --verified: #47B475;
-  --rejected: #E0503A;
-  --cell-empty: #1A1D22;
-  --mesh: rgba(255,255,255,.028);
-  --grid: rgba(255,255,255,.028);
-}
-.light {
+:root, .light {
   color-scheme: light;
-  --bg: #F7F7F6;
-  --panel: #FFFFFF;
-  --panel-2: #EFEFEE;
-  --border: #DEDEDC;
-  --border-bright: #C6C6C3;
-  --text: #16181B;
-  --text-dim: #585D64;
-  --text-faint: #6B707A;  /* darkened to clear WCAG AA on the light surface */
-  --accent: #8A6A12;     /* brass, light */
-  --accent-2: #B9962F;
-  --accent-dim: #B9962F;
-  --accent-ghost: #f0e6c8;
-  --amber: #8A6A12;
-  --verified: #1E7F4B;
-  --rejected: #BC3520;
-  --cell-empty: #E6E6E4;
-  --mesh: rgba(0,0,0,.035);
-  --grid: rgba(0,0,0,.035);
+  --bg: #F5F7FA;
+  --panel: #FFFFFF;      /* surface */
+  --panel-2: #ECF0F6;    /* elevated / wells */
+  --border: #E2E7EF;
+  --border-bright: #C9D3E0;
+  --text: #1E2430;
+  --text-dim: #5A6478;
+  --text-faint: #6E7889;  /* AA on bg and panel */
+  --accent: #2F79CE;     /* sky — interactive voice (AA on white) */
+  --accent-2: #7FB0E8;
+  --accent-dim: #245FA3;
+  --accent-ghost: #E3EEFB;
+  --amber: #C77414;      /* renders & energy (AA-adjacent on white for text) */
+  --verified: #1E9E5C;
+  --rejected: #D6452E;
+  --cell-empty: #E5EAF2;
+  --mesh: transparent;   /* the terminal grid retired in daylight */
+  --grid: transparent;
+  --shadow-soft: 0 4px 18px rgba(30, 36, 48, 0.07);
+  --shadow-pop: 0 6px 20px rgba(47, 121, 206, 0.28);
+}
+.dark {
+  color-scheme: dark;
+  --bg: #141A25;
+  --panel: #1C2432;      /* navy night, not terminal black */
+  --panel-2: #253044;
+  --border: #2D3A52;
+  --border-bright: #3C4C6A;
+  --text: #EDF1F7;
+  --text-dim: #97A3B9;
+  --text-faint: #8894AA;
+  --accent: #5B9EE8;
+  --accent-2: #2F79CE;
+  --accent-dim: #7FB0E8;
+  --accent-ghost: #1A2B42;
+  --amber: #E89A3C;
+  --verified: #3FBF7F;
+  --rejected: #E4604A;
+  --cell-empty: #232E40;
+  --mesh: rgba(255,255,255,.02);
+  --grid: rgba(255,255,255,.02);
+  --shadow-soft: 0 4px 18px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 6px 20px rgba(91, 158, 232, 0.25);
 }
 
 * { border-color: var(--border); }
@@ -75,9 +81,8 @@ body {
 }
 
 .font-display {
-  font-family: var(--font-display), "Newsreader", Georgia, "Times New Roman", serif;
-  font-optical-sizing: auto;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display), "Nunito", "Inter", system-ui, sans-serif;
+  letter-spacing: -0.015em;
 }
 .num {
   font-family: var(--font-mono), "Spline Sans Mono", ui-monospace, monospace;
@@ -85,19 +90,18 @@ body {
   letter-spacing: -0.02em;
 }
 
-/* ---- panel chrome ---- */
-.panel { background: var(--panel); border: 1px solid var(--border); position: relative; }
-.panel-bright { border-color: var(--border-bright); }
-.ticked::before, .ticked::after {
-  content: ""; position: absolute; width: 6px; height: 6px;
-  border-color: var(--accent); opacity: 0.6; pointer-events: none;
+/* ---- panel chrome (rounded, soft — the terminal ticks are retired) ---- */
+.panel {
+  background: var(--panel); border: 1px solid var(--border); position: relative;
+  border-radius: 14px; box-shadow: var(--shadow-soft);
 }
-.ticked::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
-.ticked::after { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+.panel-bright { border-color: var(--border-bright); }
+.ticked::before, .ticked::after { content: none; }
 
 .barlabel {
-  font-family: var(--font-mono), monospace;
-  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--text-faint);
 }
 
@@ -154,13 +158,15 @@ body {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 16%, transparent) 48%, color-mix(in srgb, var(--accent) 22%, transparent) 50%, color-mix(in srgb, var(--accent) 16%, transparent) 52%, transparent 100%);
   background-size: 220% 100%; background-repeat: no-repeat;
-  mix-blend-mode: screen; opacity: 0.9;
+  mix-blend-mode: multiply; opacity: 0.5;
   animation: sieve-sweep 6.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 @keyframes sieve-sweep {
   0% { background-position: 140% 0; }
   55%, 100% { background-position: -60% 0; }
 }
+.dark .sieve-sweep::before { mix-blend-mode: screen; opacity: 0.9; }
+
 
 /* Nav underline draws in from the left on hover. */
 .navlink { position: relative; }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Newsreader, Public_Sans, Spline_Sans_Mono } from "next/font/google";
+import { Inter, Nunito, Spline_Sans_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeProvider, themeInitScript } from "@/lib/theme";
@@ -14,8 +14,8 @@ import { NavLinks } from "@/components/NavLinks";
 // anti-generic display voice: serif headlines against grotesque body + mono
 // data = the "assay certificate / ledger of record" feel. (Chosen over
 // Fraunces, which has become a designer default — impeccable flags it.)
-const display = Newsreader({ subsets: ["latin"], weight: ["500", "600", "700", "800"], style: ["normal", "italic"], variable: "--font-display", display: "swap" });
-const sans = Public_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-sans", display: "swap" });
+const display = Nunito({ subsets: ["latin"], weight: ["600", "700", "800", "900"], variable: "--font-display", display: "swap" });
+const sans = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans", display: "swap" });
 const mono = Spline_Sans_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
