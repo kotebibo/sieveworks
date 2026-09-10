@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "codex-grid-background",
+        "value": "*",
+        "files": [
+          "apps/web/app/globals.css"
+        ],
+        "createdAt": "2026-08-29T18:08:37.142Z",
+        "reason": "sanctioned exception: sieve mesh is the product's own metaphor (Sieveworks), a measurement-surface grid per the rule's carve-out; kept intentionally in the first impeccable audit (user-approved design direction)"
+      }
+    ]
+  }
+}

@@ -1,20 +1,36 @@
+import { randomInt } from "node:crypto";
 import { parentPort, workerData } from "node:worker_threads";
-import { SieveWorkerModule } from "@sieveworks/wasm-runtime";
+import { bucketDigest16, SieveWorkerModule, RENDER_OUT_CAP } from "@sieveworks/wasm-runtime";
 
 /**
- * Conformance gate (runs in its own short-lived thread; the parent kills it on
- * timeout). An uploaded module is accepted only if it:
- *   1. exports the 3 ABI functions and instantiates (no I/O imports),
+ * Conformance gate (runs in its own short-lived thread; the parent kills it
+ * on timeout). Dispatches on the artifact's own verification_mode export:
+ *
+ * witness_extremum (mode 0, default): a module is accepted only if it
+ *   1. exports the extremum ABI and instantiates (no I/O imports),
  *   2. is DETERMINISTIC — evaluate_range over a fixed range gives identical
  *      output on two runs, and
  *   3. honours the WITNESS INVARIANT — evaluate_seed(bucket_max_seed) equals
- *      the bucket's max score. This is the exact invariant verification relies
- *      on, so a module that fails it here could never pass a challenge.
- * Determinism + the invariant are what let the coordinator trust results from
- * a stranger's module without running it redundantly.
+ *      the bucket's max score: the exact invariant verification relies on.
+ *
+ * output_hash (mode 1): the invariant verification relies on is "bytes are
+ *   reproducible, independent of call order" — so the gate exercises the
+ *   REAL call patterns, not a toy range:
+ *   1. a full sequential run (worker pattern) twice in one instance →
+ *      byte-identical digests,
+ *   2. a random subset recomputed as ISOLATED calls in a FRESH instance
+ *      (the coordinator's challenge pattern) → identical to the sequential
+ *      run. A module that branches on call order or hidden state fails here.
+ *   3. every bucket nonempty and within RENDER_OUT_CAP.
+ *
+ * training (mode 2): not accepted yet — lands with Spec 03 (Week 2).
  */
 
 const { wasmBase64, paramsJson } = workerData as { wasmBase64: string; paramsJson: string };
+
+const GATE_BUCKETS = 16; // buckets exercised per run
+const ISOLATED_SAMPLES = 4; // call-order-independence probes
+const ZERO_SALT = new Uint8Array(16); // no job exists at gate time
 
 async function run(): Promise<void> {
   const bytes = new Uint8Array(Buffer.from(wasmBase64, "base64"));
@@ -26,30 +42,69 @@ async function run(): Promise<void> {
   }
 
   const specVersion = mod.specVersion();
-  const start = 0n, end = 8192n, bucket = 1024n;
 
-  const run1 = fold(mod, start, end, bucket, paramsJson);
-  const run2 = fold(mod, start, end, bucket, paramsJson);
-  if (JSON.stringify(run1) !== JSON.stringify(run2)) {
-    return void parentPort!.postMessage({ ok: false, reason: "non-deterministic: two runs over the same range differ" });
-  }
-
-  // Witness invariant: every bucket max seed must reproduce its score.
-  for (const b of run1) {
-    const s = mod.evaluateSeed(BigInt(b.maxSeed), paramsJson);
-    if (s.toString() !== b.maxScore) {
-      return void parentPort!.postMessage({
-        ok: false,
-        reason: `witness invariant broken at bucket ${b.index}: evaluate_seed=${s} != bucket max ${b.maxScore}`,
-      });
+  if (mod.verificationMode === "witness_extremum") {
+    const start = 0n, end = 8192n, bucket = 1024n;
+    const run1 = fold(mod, start, end, bucket, paramsJson);
+    const run2 = fold(mod, start, end, bucket, paramsJson);
+    if (JSON.stringify(run1) !== JSON.stringify(run2)) {
+      return void parentPort!.postMessage({ ok: false, reason: "non-deterministic: two runs over the same range differ" });
     }
+    // Witness invariant: every bucket max seed must reproduce its score.
+    for (const b of run1) {
+      const s = mod.evaluateSeed(BigInt(b.maxSeed), paramsJson);
+      if (s.toString() !== b.maxScore) {
+        return void parentPort!.postMessage({
+          ok: false,
+          reason: `witness invariant broken at bucket ${b.index}: evaluate_seed=${s} != bucket max ${b.maxScore}`,
+        });
+      }
+    }
+    return void parentPort!.postMessage({
+      ok: true,
+      verification_mode: "witness_extremum",
+      spec_version: specVersion,
+      sample: run1.slice(0, 4),
+      buckets_checked: run1.length,
+    });
   }
 
-  parentPort!.postMessage({
-    ok: true,
-    spec_version: specVersion,
-    sample: run1.slice(0, 4),
-    buckets_checked: run1.length,
+  if (mod.verificationMode === "output_hash") {
+    // Sequential worker pattern, twice, same instance.
+    let run1: string[], run2: string[];
+    try {
+      run1 = renderAll(mod, paramsJson);
+      run2 = renderAll(mod, paramsJson);
+    } catch (e) {
+      return void parentPort!.postMessage({ ok: false, reason: `render failed: ${(e as Error).message}` });
+    }
+    if (JSON.stringify(run1) !== JSON.stringify(run2)) {
+      return void parentPort!.postMessage({ ok: false, reason: "non-deterministic: two sequential runs differ" });
+    }
+    // Coordinator challenge pattern: isolated calls, fresh instance.
+    const fresh = await SieveWorkerModule.load(bytes);
+    for (let i = 0; i < ISOLATED_SAMPLES; i++) {
+      const idx = randomInt(GATE_BUCKETS);
+      const isolated = digestOf(fresh, BigInt(idx), paramsJson);
+      if (isolated !== run1[idx]) {
+        return void parentPort!.postMessage({
+          ok: false,
+          reason: `call-order dependence at bucket ${idx}: isolated recompute differs from sequential run`,
+        });
+      }
+    }
+    return void parentPort!.postMessage({
+      ok: true,
+      verification_mode: "output_hash",
+      spec_version: specVersion,
+      sample: run1.slice(0, 4),
+      buckets_checked: GATE_BUCKETS,
+    });
+  }
+
+  return void parentPort!.postMessage({
+    ok: false,
+    reason: `verification_mode '${mod.verificationMode}' is not accepted yet`,
   });
 }
 
@@ -62,6 +117,24 @@ function fold(mod: SieveWorkerModule, start: bigint, end: bigint, bucket: bigint
     out.push({ index: i, maxScore: r.maxScore.toString(), maxSeed: r.maxSeed.toString() });
   }
   return out;
+}
+
+/** Render buckets [0..GATE_BUCKETS) as unit ranges (render jobs use
+ * bucket_size 1: one output unit per leaf) and return their digests. */
+function renderAll(mod: SieveWorkerModule, params: string): string[] {
+  const out: string[] = [];
+  for (let i = 0n; i < BigInt(GATE_BUCKETS); i++) {
+    out.push(digestOf(mod, i, params));
+  }
+  return out;
+}
+
+function digestOf(mod: SieveWorkerModule, index: bigint, params: string): string {
+  const bytes = mod.renderBucket(index, index + 1n, params);
+  if (bytes.length === 0 || bytes.length > RENDER_OUT_CAP) {
+    throw new Error(`bucket ${index}: output size ${bytes.length} outside (0, ${RENDER_OUT_CAP}]`);
+  }
+  return Buffer.from(bucketDigest16(ZERO_SALT, bytes)).toString("hex");
 }
 
 run().catch((e) => parentPort!.postMessage({ ok: false, reason: `gate error: ${(e as Error).message}` }));

@@ -13,7 +13,7 @@ import { events } from "./events.js";
 import { createJob, CreateJobRequest } from "./jobs.js";
 import type { LeaseStore } from "./leases.js";
 import { env } from "./env.js";
-import { judgeChallengeResponse, verifySubmission } from "./verification.js";
+import { deliverOutputs, judgeChallengeResponse, verifySubmission } from "./verification.js";
 import { registry } from "./moduleRegistry.js";
 import { runConformanceGate } from "./conformance.js";
 import { authedWallet, completeSignIn, issueNonce, requireAuth } from "./auth.js";
@@ -282,7 +282,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     const specs = await sql`
       select ws.hash, ws.name, ws.description, ws.spec_version, ws.conformance,
              ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
-             ws.is_builtin, ws.is_private, ws.publisher, ws.created_at,
+             ws.is_builtin, ws.is_private, ws.publisher, ws.created_at, ws.verification_mode,
              (ws.publisher is not null and ws.publisher = ${caller}) as mine,
              count(j.id) filter (where j.status = 'open')::int as open_jobs
       from worker_specs ws
@@ -375,10 +375,10 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return reply.code(200).send({ ok: true, hash: verdict.hash, spec_version: verdict.spec_version, note: "already registered by another publisher; metadata unchanged" });
     }
     await sql`
-      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher)
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher, verification_mode)
       values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
               ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
-              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher})
+              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher}, ${verdict.verification_mode ?? "witness_extremum"})
       on conflict (hash) do update set name = excluded.name, description = excluded.description, is_private = ${isPrivate}, publisher = ${publisher}`;
     await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is ${isPrivate ? "private (visible only to you)" : "live"}.`, "/modules");
     events.emit("spec_registered", { hash: verdict.hash, name });
@@ -612,7 +612,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       select c.id as chunk_id, c.state, c.lease_nonce, c.lease_expires_at, c.leased_to,
              c.range_start::text, c.range_end::text,
              j.id as job_id, j.worker_spec_hash, j.bucket_size, j.params,
-             j.price_per_chunk_lamports::text, j.current_record_score,
+             j.price_per_chunk_lamports::text, j.current_record_score, j.verification_mode,
              u.wallet_address
       from chunks c
       join jobs j on j.id = c.job_id
@@ -627,6 +627,8 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return reply.code(409).send({ error: "lease expired" });
     if (row.worker_spec_hash !== sub.worker_spec_hash)
       return reply.code(422).send({ error: "rejected" });
+    if ((sub.mode ?? "witness_extremum") !== row.verification_mode)
+      return reply.code(422).send({ error: "rejected" });
     if (row.lease_nonce !== sub.nonce) return reply.code(422).send({ error: "rejected" });
     if (!verifyResultSignature(sub, row.wallet_address))
       return reply.code(422).send({ error: "rejected" });
@@ -635,19 +637,21 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       insert into results (chunk_id, worker_id, extremum_score, witness_seed, merkle_root,
                            buckets_count, seeds_evaluated, duration_ms, signature,
                            verification_state)
-      values (${sub.chunk_id}, ${row.leased_to}, ${sub.extremum_score}, ${sub.witness_seed},
+      values (${sub.chunk_id}, ${row.leased_to}, ${sub.extremum_score ?? null}, ${sub.witness_seed ?? null},
               ${sub.merkle_root}, ${sub.buckets_count}, ${sub.seeds_evaluated},
               ${sub.duration_ms}, ${sub.signature}, 'pending')
       returning id`;
     await sql`update chunks set state = 'submitted' where id = ${sub.chunk_id}`;
     events.emit("chunk_submitted", { chunk_id: sub.chunk_id, job_id: row.job_id });
 
-    // The verification pipeline (spec §8): witness → honeypot → challenge.
+    // The verification pipeline (spec §8): witness → honeypot → challenge
+    // (extremum), or challenge-only → awaiting delivery (output_hash).
     return verifySubmission(deps, result!.id, sub, {
       chunkId: sub.chunk_id,
       jobId: row.job_id,
       workerId: row.leased_to,
       specHash: row.worker_spec_hash,
+      mode: row.verification_mode,
       rangeStart: BigInt(row.range_start),
       rangeEnd: BigInt(row.range_end),
       bucketSize: row.bucket_size,
@@ -655,6 +659,27 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       pricePerChunk: row.price_per_chunk_lamports,
       currentRecordScore: row.current_record_score === null ? null : BigInt(row.current_record_score),
     });
+  });
+
+  // ---- output delivery (mode 2) ------------------------------------------
+  // Digest-checked against the committed Merkle root; only matching bytes
+  // are ever stored, so no signature is needed — correctness is the auth.
+  // Payment happens here, never at verification (delivery gates payment).
+  app.put("/v1/results/:id/outputs", { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { outputs?: string[] };
+    if (!Array.isArray(body.outputs) || body.outputs.length === 0 || body.outputs.length > 4096) {
+      return reply.code(400).send({ error: "outputs: base64[] (bucket order) required" });
+    }
+    let outputs: Uint8Array[];
+    try {
+      outputs = body.outputs.map((b64) => new Uint8Array(Buffer.from(b64, "base64")));
+    } catch {
+      return reply.code(400).send({ error: "outputs must be base64" });
+    }
+    const verdict = await deliverOutputs(deps, id, outputs);
+    if (!verdict.ok) return reply.code(verdict.code).send({ error: verdict.error });
+    return { ok: true, result_id: id };
   });
 
   // ---- challenge response ------------------------------------------------

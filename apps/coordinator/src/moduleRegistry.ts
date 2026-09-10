@@ -63,11 +63,12 @@ class ModuleRegistry {
       const mod = await SieveWorkerModule.load(bytes, hash);
       await sql`
         insert into worker_specs (hash, name, description, spec_version, wasm, conformance,
-                                  example_params, default_range_start, default_range_end, is_builtin)
+                                  example_params, default_range_start, default_range_end, is_builtin,
+                                  verification_mode)
         values (${hash}, ${b.name}, ${b.description}, ${mod.specVersion()},
                 ${Buffer.from(bytes)}, ${sql.json({ builtin: true, passed: true } as never)},
                 ${sql.json(b.example_params as never)}, ${b.default_range_start},
-                ${b.default_range_end}, true)
+                ${b.default_range_end}, true, ${mod.verificationMode})
         on conflict (hash) do nothing`;
       this.cache.set(hash, mod);
       this.bytesCache.set(hash, bytes);

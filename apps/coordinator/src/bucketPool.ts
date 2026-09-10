@@ -13,12 +13,17 @@ interface BucketResult {
   maxSeed: bigint;
 }
 
+interface PendingOp {
+  resolve: (r: { maxScore?: string; maxSeed?: string; digestHex?: string }) => void;
+  reject: (e: Error) => void;
+}
+
 const BUCKET_TIMEOUT_MS = Number(process.env.BUCKET_TIMEOUT_MS ?? 8000);
 
 export class BucketPool {
   private worker!: Worker;
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (r: BucketResult) => void; reject: (e: Error) => void }>();
+  private readonly pending = new Map<number, PendingOp>();
 
   async start(): Promise<void> {
     await this.spawn();
@@ -30,13 +35,13 @@ export class BucketPool {
       this.worker.once("message", (m: { type: string }) => (m.type === "ready" ? resolve() : reject(new Error("bad ready"))));
       this.worker.once("error", reject);
     });
-    this.worker.on("message", (m: { type: string; id?: number; maxScore?: string; maxSeed?: string; error?: string }) => {
+    this.worker.on("message", (m: { type: string; id?: number; maxScore?: string; maxSeed?: string; digestHex?: string; error?: string }) => {
       if (m.type !== "result" || m.id === undefined) return;
       const p = this.pending.get(m.id);
       if (!p) return;
       this.pending.delete(m.id);
       if (m.error) p.reject(new Error(m.error));
-      else p.resolve({ maxScore: BigInt(m.maxScore!), maxSeed: BigInt(m.maxSeed!) });
+      else p.resolve(m);
     });
     this.worker.on("error", (err) => this.failAll(err));
   }
@@ -56,9 +61,9 @@ export class BucketPool {
     await this.spawn();
   }
 
-  evaluateBucket(hash: string, rangeStart: bigint, rangeEnd: bigint, paramsJson: string): Promise<BucketResult> {
+  private dispatch(msg: Record<string, unknown>): Promise<{ maxScore?: string; maxSeed?: string; digestHex?: string }> {
     const id = this.nextId++;
-    return new Promise<BucketResult>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.pending.delete(id)) {
           reject(new Error("bucket recompute timed out — module too slow or looping"));
@@ -69,7 +74,20 @@ export class BucketPool {
         resolve: (r) => { clearTimeout(timer); resolve(r); },
         reject: (e) => { clearTimeout(timer); reject(e); },
       });
-      this.worker.postMessage({ id, hash, rangeStart: rangeStart.toString(), rangeEnd: rangeEnd.toString(), paramsJson });
+      this.worker.postMessage({ id, ...msg });
     });
+  }
+
+  async evaluateBucket(hash: string, rangeStart: bigint, rangeEnd: bigint, paramsJson: string): Promise<BucketResult> {
+    const r = await this.dispatch({ op: "extremum", hash, rangeStart: rangeStart.toString(), rangeEnd: rangeEnd.toString(), paramsJson });
+    return { maxScore: BigInt(r.maxScore!), maxSeed: BigInt(r.maxSeed!) };
+  }
+
+  /** Mode-2 challenge truth: recompute the bucket's output in the thread and
+   * return its job-salted 16-byte leaf digest (hex). Bytes never cross the
+   * thread boundary — the challenge only compares digests. */
+  async renderBucketDigest(hash: string, rangeStart: bigint, rangeEnd: bigint, paramsJson: string, salt16Hex: string): Promise<string> {
+    const r = await this.dispatch({ op: "render", hash, rangeStart: rangeStart.toString(), rangeEnd: rangeEnd.toString(), paramsJson, salt16Hex });
+    return r.digestHex!;
   }
 }

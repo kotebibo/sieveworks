@@ -25,26 +25,71 @@ export const ChunkAssignment = z
   .refine((c) => BigInt(c.range_end) > BigInt(c.range_start), "empty or inverted range");
 export type ChunkAssignment = z.infer<typeof ChunkAssignment>;
 
+/** How a job's results are verified. Carried by the module artifact itself
+ * (optional `verification_mode()` WASM export; absent = witness_extremum,
+ * so every pre-mode artifact keeps its hash and meaning). */
+export const VerificationMode = z.enum(["witness_extremum", "output_hash", "training"]);
+export type VerificationMode = z.infer<typeof VerificationMode>;
+
+export function effectiveMode(mode: VerificationMode | undefined): VerificationMode {
+  return mode ?? "witness_extremum";
+}
+
 /** Worker → coordinator. `signature` is the worker wallet's ed25519 signature
- * over canonicalBytes of every other field (see resultSigningBytes). */
-export const ResultSubmission = z.object({
-  chunk_id: uuid,
-  worker_spec_hash: sha256Hex,
-  extremum_score: i64String,
-  witness_seed: u64String,
-  merkle_root: sha256Hex,
-  buckets_count: z.number().int().positive(),
-  seeds_evaluated: u64String,
-  duration_ms: z.number().int().nonnegative(),
-  nonce: z.string().min(16).max(128),
-  signature: base58Sig,
-});
+ * over canonicalBytes of every other field (see resultSigningBytes).
+ *
+ * `mode` is OPTIONAL with NO zod default, deliberately: canonicalJson drops
+ * absent keys, so legacy submissions (no mode on the wire) sign and verify
+ * exactly as before, and explicit-mode submissions include the key — no
+ * side-channel "was it on the wire" plumbing. Normalize with
+ * effectiveMode() in business logic only, never in the schema.
+ *
+ * Per-mode field rules (enforced by the superRefine):
+ *   witness_extremum — extremum_score + witness_seed REQUIRED
+ *   output_hash      — both ABSENT (leaves carry digests, not scores)
+ *   training         — extremum_score (= best fitness) + best_candidate_b64
+ *                      REQUIRED, witness_seed absent
+ */
+export const ResultSubmission = z
+  .object({
+    chunk_id: uuid,
+    worker_spec_hash: sha256Hex,
+    mode: VerificationMode.optional(),
+    extremum_score: i64String.optional(),
+    witness_seed: u64String.optional(),
+    best_candidate_b64: z.string().max(90_000).optional(),
+    merkle_root: sha256Hex,
+    buckets_count: z.number().int().positive(),
+    seeds_evaluated: u64String,
+    duration_ms: z.number().int().nonnegative(),
+    nonce: z.string().min(16).max(128),
+    signature: base58Sig,
+  })
+  .superRefine((sub, ctx) => {
+    const mode = effectiveMode(sub.mode);
+    const need = (cond: boolean, message: string) => {
+      if (!cond) ctx.addIssue({ code: "custom", message });
+    };
+    if (mode === "witness_extremum") {
+      need(sub.extremum_score !== undefined, "witness_extremum requires extremum_score");
+      need(sub.witness_seed !== undefined, "witness_extremum requires witness_seed");
+    } else if (mode === "output_hash") {
+      need(sub.extremum_score === undefined, "output_hash carries no extremum_score");
+      need(sub.witness_seed === undefined, "output_hash carries no witness_seed");
+    } else {
+      need(sub.extremum_score !== undefined, "training requires extremum_score (best fitness)");
+      need(sub.best_candidate_b64 !== undefined, "training requires best_candidate_b64");
+      need(sub.witness_seed === undefined, "training carries no witness_seed");
+    }
+  });
 export type ResultSubmission = z.infer<typeof ResultSubmission>;
 
-/** The exact bytes a worker signs and the coordinator verifies. */
+/** The exact bytes a worker signs and the coordinator verifies. Absent
+ * optionals vanish from the canonical form (canonicalJson filters
+ * undefined), which is what keeps legacy signatures valid. */
 export function resultSigningBytes(submission: Omit<ResultSubmission, "signature">): Uint8Array {
-  const { chunk_id, worker_spec_hash, extremum_score, witness_seed, merkle_root, buckets_count, seeds_evaluated, duration_ms, nonce } = submission;
-  return canonicalBytes({ chunk_id, worker_spec_hash, extremum_score, witness_seed, merkle_root, buckets_count, seeds_evaluated, duration_ms, nonce });
+  const { chunk_id, worker_spec_hash, mode, extremum_score, witness_seed, best_candidate_b64, merkle_root, buckets_count, seeds_evaluated, duration_ms, nonce } = submission;
+  return canonicalBytes({ chunk_id, worker_spec_hash, mode, extremum_score, witness_seed, best_candidate_b64, merkle_root, buckets_count, seeds_evaluated, duration_ms, nonce });
 }
 
 export const Challenge = z.object({

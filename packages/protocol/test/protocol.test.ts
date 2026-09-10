@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalJson,
   ChunkAssignment,
+  digest16ToWire,
   i64String,
   ResultSubmission,
   resultSigningBytes,
   u64String,
+  wireToDigest16,
 } from "../src/index.js";
 
 describe("canonicalJson", () => {
@@ -100,5 +102,90 @@ describe("ResultSubmission signing bytes", () => {
     const b = resultSigningBytes(reordered as typeof submission);
     expect(Buffer.from(a).toString()).toBe(Buffer.from(b).toString());
     expect(Buffer.from(a).toString()).not.toContain("signature");
+  });
+
+  // Legacy compatibility is load-bearing: a pre-mode worker signs a payload
+  // with NO mode key. If the schema defaulted mode, the coordinator's
+  // reconstruction would include it and every legacy signature would break.
+  it("legacy shape (no mode) signs identically to the pre-mode protocol", () => {
+    const withUndefined = { ...submission, mode: undefined, best_candidate_b64: undefined };
+    expect(Buffer.from(resultSigningBytes(withUndefined)).toString()).toBe(
+      Buffer.from(resultSigningBytes(submission)).toString()
+    );
+    expect(Buffer.from(resultSigningBytes(submission)).toString()).not.toContain("mode");
+  });
+
+  it("explicit mode changes the signing bytes", () => {
+    const explicit = { ...submission, mode: "witness_extremum" as const };
+    expect(Buffer.from(resultSigningBytes(explicit)).toString()).toContain('"mode"');
+    expect(Buffer.from(resultSigningBytes(explicit)).toString()).not.toBe(
+      Buffer.from(resultSigningBytes(submission)).toString()
+    );
+  });
+});
+
+describe("per-mode field rules", () => {
+  const base = {
+    chunk_id: "3b2417cc-5c3f-4a3b-9d6e-2f24d1c0a111",
+    worker_spec_hash: "a".repeat(64),
+    merkle_root: "b".repeat(64),
+    buckets_count: 64,
+    seeds_evaluated: "65536",
+    duration_ms: 100,
+    nonce: "0123456789abcdef",
+    signature: "1".repeat(88),
+  };
+
+  it("witness_extremum (implicit and explicit) requires extremum fields", () => {
+    expect(ResultSubmission.safeParse(base).success).toBe(false);
+    expect(
+      ResultSubmission.safeParse({ ...base, extremum_score: "5", witness_seed: "9" }).success
+    ).toBe(true);
+    expect(
+      ResultSubmission.safeParse({ ...base, mode: "witness_extremum" }).success
+    ).toBe(false);
+  });
+
+  it("output_hash forbids extremum fields", () => {
+    expect(ResultSubmission.safeParse({ ...base, mode: "output_hash" }).success).toBe(true);
+    expect(
+      ResultSubmission.safeParse({ ...base, mode: "output_hash", extremum_score: "5" }).success
+    ).toBe(false);
+  });
+
+  it("training requires best fitness + candidate, forbids witness_seed", () => {
+    expect(
+      ResultSubmission.safeParse({
+        ...base,
+        mode: "training",
+        extremum_score: "123",
+        best_candidate_b64: "AAAA",
+      }).success
+    ).toBe(true);
+    expect(ResultSubmission.safeParse({ ...base, mode: "training", extremum_score: "123" }).success).toBe(false);
+    expect(
+      ResultSubmission.safeParse({
+        ...base,
+        mode: "training",
+        extremum_score: "123",
+        best_candidate_b64: "AAAA",
+        witness_seed: "9",
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("digest16 wire mapping", () => {
+  it("round-trips arbitrary digests, including high-bit score halves", () => {
+    for (const bytes of [
+      new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+      new Uint8Array(16), // all zero
+      Uint8Array.from({ length: 16 }, (_, i) => (i * 37 + 129) & 0xff), // high bit set in byte 7
+    ]) {
+      const wire = digest16ToWire(bytes);
+      expect(i64String.safeParse(wire.score).success).toBe(true);
+      expect(u64String.safeParse(wire.seed).success).toBe(true);
+      expect(Buffer.from(wireToDigest16(wire))).toEqual(Buffer.from(bytes));
+    }
   });
 });

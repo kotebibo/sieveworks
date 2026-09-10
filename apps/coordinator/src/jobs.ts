@@ -122,6 +122,13 @@ export async function createJob(
   // go to 'open' jobs, so a draft job can't be worked.
   const status = price > 0n ? "draft" : "open";
 
+  // The job's verification mode is the MODULE's mode (declared by the
+  // artifact's own verification_mode export, recorded at registration).
+  // Copied here once; immutable for the job's life.
+  const [spec] = await sql<{ verification_mode: string }[]>`
+    select verification_mode from worker_specs where hash = ${workerSpecHash}`;
+  const verificationMode = spec?.verification_mode ?? "witness_extremum";
+
   // The creator is the authenticated wallet (or coordinator-admin for the
   // token-gated admin path). Its user row must exist.
   const [creator] = await sql<{ id: string }[]>`
@@ -133,12 +140,13 @@ export async function createJob(
   const [job] = await sql<{ id: string }[]>`
     insert into jobs (creator_id, title, description, game, worker_spec_hash, version_pin,
                       params, search_space_start, search_space_end, chunk_size, bucket_size,
-                      budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds)
+                      budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds,
+                      verification_mode)
     values (${creator!.id}, ${req.title}, ${req.description ?? null}, ${req.game},
             ${workerSpecHash}, ${req.version_pin}, ${sql.json(req.params as never)},
             ${start.toString()}, ${end.toString()}, ${chunkSize.toString()}, ${req.bucket_size},
             ${req.budget_lamports.toString()}, ${req.price_per_chunk_lamports.toString()},
-            ${status}, ${req.lease_ttl_seconds})
+            ${status}, ${req.lease_ttl_seconds}, ${verificationMode})
     returning id`;
   const jobId = job!.id;
 
@@ -155,7 +163,13 @@ export async function createJob(
   }
   if (rows.length > 0) await sql`insert into chunks ${sql(rows)}`;
 
-  const honeypots = await generateHoneypots(workerSpecHash, jobId, start, end, chunkCount, req.params);
+  // Honeypots are structurally extremum-only ("a known better seed exists in
+  // this range" has no meaning for output digests) — modes without an
+  // ordering skip them; their audit rate compensates (Spec 01 §5).
+  const honeypots =
+    verificationMode === "witness_extremum"
+      ? await generateHoneypots(workerSpecHash, jobId, start, end, chunkCount, req.params)
+      : 0;
 
   return { jobId, chunkSize, chunkCount, honeypots, status };
 }

@@ -1,7 +1,7 @@
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
-import { expireChallenges, type VerifyDeps } from "./verification.js";
+import { expireChallenges, expireDeliveries, type VerifyDeps } from "./verification.js";
 
 /**
  * Lease reclaim. Postgres lease_expires_at is the truth (spec §7): expired
@@ -13,6 +13,8 @@ export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Time
   const tick = async (): Promise<void> => {
     const expired = await expireChallenges(deps);
     if (expired > 0) console.log(`sweeper: expired ${expired} unanswered challenge(s)`);
+    const undelivered = await expireDeliveries(deps);
+    if (undelivered > 0) console.log(`sweeper: expired ${undelivered} undelivered output(s)`);
     const quarantined = await sql<{ id: string; job_id: string }[]>`
       update chunks set state = 'quarantined', leased_to = null, lease_nonce = null
       where state = 'leased' and lease_expires_at < now() and attempts >= 5
