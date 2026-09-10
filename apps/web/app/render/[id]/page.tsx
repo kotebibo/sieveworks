@@ -8,7 +8,7 @@ import { Badge, Mono, Progress, Skeleton, fmt } from "@/components/ui";
 /**
  * The render view: verified tiles assemble into the image as the swarm
  * delivers them — distributed compute you can literally watch. Palette 0 =
- * inside the set (near-black); 1..255 ramp through the brass accent.
+ * inside the set (deep ink); 1..255 ramp cream → amber (Daylight).
  */
 export default function RenderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -44,11 +44,12 @@ export default function RenderPage({ params }: { params: Promise<{ id: string }>
         const img = ctx.createImageData(tile, tile);
         for (let i = 0; i < bytes.length; i++) {
           const v = bytes[i]!;
-          // 0 = in-set: near-black. 1..255: brass ramp (dim → bright).
+          // Daylight ramp: in-set = deep ink; escapes glow cream → amber →
+          // ember, vivid against the light frame (amber is the render color).
           const t = v / 255;
-          img.data[i * 4 + 0] = v === 0 ? 12 : Math.round(60 + 165 * t);
-          img.data[i * 4 + 1] = v === 0 ? 12 : Math.round(45 + 125 * t);
-          img.data[i * 4 + 2] = v === 0 ? 14 : Math.round(20 + 60 * t);
+          img.data[i * 4 + 0] = v === 0 ? 27 : Math.round(255 - 40 * t);
+          img.data[i * 4 + 1] = v === 0 ? 34 : Math.round(244 - 150 * t);
+          img.data[i * 4 + 2] = v === 0 ? 51 : Math.round(214 - 200 * t);
           img.data[i * 4 + 3] = 255;
         }
         ctx.putImageData(img, tx * tile, ty * tile);
