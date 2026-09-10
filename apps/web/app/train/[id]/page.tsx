@@ -33,6 +33,15 @@ interface GenStat {
   best: number;
 }
 
+interface Flock {
+  traces: { dv: DataView; nTicks: number; score: number }[];
+  maxScore: number;
+  nPipes: number;
+  pipesDv: DataView | null;
+  tick: number;
+  gen: number;
+}
+
 export default function TrainPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [detail, setDetail] = useState<JobDetail | null>(null);
@@ -48,14 +57,10 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
   const bestGenomeRef = useRef<Uint8Array | null>(null);
   const runningRef = useRef(false);
   // Flock replay: EVERY bird of a captured generation flies at once,
-  // color-graded by fitness (dim red = died early, bright gold = mastered).
-  const replayRef = useRef<{
-    traces: { dv: DataView; nTicks: number; score: number }[];
-    maxScore: number;
-    nPipes: number;
-    pipesDv: DataView | null;
-    tick: number;
-  } | null>(null);
+  // color-graded by fitness (dim red = died early, bright green = mastered).
+  const replayRef = useRef<Flock | null>(null);
+  const pendingRef = useRef<Flock | null>(null); // newest capture, promoted at flight end
+  const [shownGen, setShownGen] = useState(0);
 
   const refreshLeaderboard = () => {
     fetchJobCandidates(id).then((r) => setLeaderboard(r.candidates as never)).catch(() => {});
@@ -97,13 +102,16 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         .map((gg) => ({ gg, s: mod.evaluateCandidate(gg, paramsJson) }))
         .sort((a, b) => (b.s > a.s ? 1 : b.s < a.s ? -1 : 0));
       const genBest = scored[0]!;
-      if (genBest.s > best || bestGenomeRef.current === null) {
+      const improved = genBest.s > best || bestGenomeRef.current === null;
+      if (improved) {
         bestGenomeRef.current = genBest.gg.slice();
         setBest(genBest.s);
       }
-      // Re-capture the whole flock every 5 generations (tracing 96 genomes
-      // is ~100ms — cheap, but not every-frame cheap).
-      if (g % 5 === 1) captureFlock(mod, scored);
+      // Capture a flock to REPLAY only when the generation gets meaningfully
+      // better (or on a slow heartbeat) — the replay then plays each captured
+      // generation to COMPLETION before swapping (see the draw loop), so you
+      // watch whole flights improve, not a half-second of flailing on repeat.
+      if (improved || g % 25 === 0) captureFlock(mod, scored, g);
       g += 1;
       setGen(g);
       setHistory((h) => [...h.slice(-199), { gen: g, best: Number(genBest.s) }]);
@@ -129,7 +137,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
     setRunning(false);
   }
 
-  function captureFlock(mod: SieveWorkerModule, scored: { gg: Uint8Array; s: bigint }[]): void {
+  function captureFlock(mod: SieveWorkerModule, scored: { gg: Uint8Array; s: bigint }[], atGen: number): void {
     try {
       const traces = scored.map(({ gg, s }) => {
         const t = mod.traceCandidate(gg, paramsJson);
@@ -137,15 +145,20 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         return { dv, nTicks: dv.getUint32(0, true), score: Number(s) };
       });
       const first = traces[0]!;
-      replayRef.current = {
+      const flock: Flock = {
         traces,
         maxScore: Math.max(1, ...traces.map((t) => t.score)),
         nPipes: first.dv.getUint32(8, true),
         pipesDv: first.dv,
         tick: 0,
+        gen: atGen,
       };
+      // Queue it; the draw loop promotes it only when the current flight
+      // finishes, so a generation is always shown edge-to-edge.
+      pendingRef.current = flock;
+      if (!replayRef.current) replayRef.current = flock;
     } catch {
-      replayRef.current = null;
+      /* keep the last good flock */
     }
   }
 
@@ -171,8 +184,21 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         ctx.fillText("start evolution to watch the whole generation fly", 24, H / 2);
         return;
       }
+      // Play the current flight to its end (longest survivor), plus a short
+      // hold, THEN promote the newest captured generation. A generation is
+      // therefore always shown edge-to-edge — no mid-flight swaps.
       const longest = Math.max(1, ...rep.traces.map((t) => t.nTicks));
-      const t = rep.tick % longest;
+      if (rep.tick >= longest + 24) {
+        if (pendingRef.current && pendingRef.current !== rep) {
+          pendingRef.current.tick = 0;
+          replayRef.current = pendingRef.current;
+          setShownGen(pendingRef.current.gen);
+        } else {
+          rep.tick = 0; // loop the same flock until a better one arrives
+        }
+        return;
+      }
+      const t = Math.min(rep.tick, longest);
       const scroll = t * PIPE_SPEED;
       // pipes (course is shared — read from the first trace)
       if (rep.pipesDv) {
@@ -214,6 +240,12 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
 
   async function submitBest(): Promise<void> {
     if (!bestGenomeRef.current || !detail) return;
+    // Guard the doomed request: a closed / past-deadline bounty rejects
+    // submissions (409). Tell the trainer instead of firing it.
+    if (String(detail.job.status) !== "open") {
+      setSubmitState("this bounty has closed — training is open, submissions are not");
+      return;
+    }
     setSubmitState("submitting…");
     const stored = localStorage.getItem(WALLET_KEY);
     const seed = stored
@@ -283,8 +315,11 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
             ) : (
               <Button onClick={stopEvolution}>⏸ Pause</Button>
             )}
-            <Button disabled={best < 0n} onClick={() => void submitBest()}>⬆ Submit best genome</Button>
-            <span className="num text-xs text-[var(--text-dim)]">gen <span className="text-[var(--accent)]">{gen}</span> · pop {POP}</span>
+            <Button disabled={best < 0n || String(detail.job.status) !== "open"} onClick={() => void submitBest()}>⬆ Submit best genome</Button>
+            <span className="num text-xs text-[var(--text-dim)]">
+              showing gen <span className="text-[var(--accent)]">{shownGen}</span>
+              {gen > shownGen ? <> · evolving gen {gen}</> : null} · pop {POP}
+            </span>
             {submitState && <span className="num text-xs text-[var(--text-dim)]">{submitState}</span>}
           </div>
         </Panel>
