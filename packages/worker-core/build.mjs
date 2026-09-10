@@ -157,7 +157,7 @@ function buildFlappyWasm() {
   const wasm = join(outDir, "flappy_evo.wasm");
   run(findEmcc(), [
     ...COMMON_FLAGS, "-sSTANDALONE_WASM", "--no-entry", "-sALLOW_MEMORY_GROWTH",
-    "-sEXPORTED_FUNCTIONS=_evaluate_candidate,_candidate_max_len,_trace_candidate,_spec_version,_malloc,_free",
+    "-sEXPORTED_FUNCTIONS=_evaluate_candidate,_candidate_max_len,_trace_candidate,_init_state,_advance_bucket,_best_of_state,_verification_mode,_spec_version,_malloc,_free",
     "-o", wasm, FLAPPY_SRC,
   ]);
   const hash = createHash("sha256").update(readFileSync(wasm)).digest("hex");

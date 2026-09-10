@@ -40,6 +40,10 @@ interface WorkerExports {
   evaluate_candidate?: (candPtr: number, candLen: number, paramsPtr: number, paramsLen: number) => bigint;
   candidate_max_len?: () => number;
   trace_candidate?: (candPtr: number, candLen: number, paramsPtr: number, paramsLen: number, outPtr: number, outCap: number) => number;
+  // training ABI (mode 2)
+  init_state?: (seedPtr: number, seedLen: number, paramsPtr: number, paramsLen: number, outPtr: number, outCap: number) => number;
+  advance_bucket?: (statePtr: number, stateLen: number, paramsPtr: number, paramsLen: number, outPtr: number, outCap: number) => number;
+  best_of_state?: (statePtr: number, stateLen: number, paramsPtr: number, paramsLen: number, outPtr: number, outCap: number) => number;
   // mode discriminator — optional; absent = 0 = witness_extremum, so every
   // pre-mode artifact keeps its hash and meaning
   verification_mode?: () => number;
@@ -61,7 +65,7 @@ const MODE_BY_CODE: Record<number, WasmVerificationMode> = {
 const MODE_ABI: Record<WasmVerificationMode, string[]> = {
   witness_extremum: [], // checked specially below
   output_hash: ["render_bucket"],
-  training: ["render_bucket", "evaluate_seed"], // placeholder; Spec 03 finalizes
+  training: ["init_state", "advance_bucket", "best_of_state", "evaluate_candidate"],
 };
 
 export class SieveWasmError extends Error {}
@@ -176,6 +180,41 @@ export class SieveWorkerModule {
     } finally {
       this.exports.free(params.ptr);
       this.exports.free(cand.ptr);
+    }
+  }
+
+  /** Training mode: derive a lineage's generation-0 state from a 32-byte
+   * seed (pure function of the chunk spec — Spec 03 origin anchoring). */
+  initState(lineageSeed32: Uint8Array, paramsJson: string): Uint8Array {
+    return this.stateCall("init_state", lineageSeed32, paramsJson);
+  }
+
+  /** Training mode: advance one bucket (gens_per_bucket generations) —
+   * deterministic, so the coordinator can recompute any committed segment. */
+  advanceBucket(state: Uint8Array, paramsJson: string): Uint8Array {
+    return this.stateCall("advance_bucket", state, paramsJson);
+  }
+
+  /** Training mode: extract the chunk witness (i64 best score ‖ genome). */
+  bestOfState(state: Uint8Array, paramsJson: string): Uint8Array {
+    return this.stateCall("best_of_state", state, paramsJson);
+  }
+
+  private stateCall(name: "init_state" | "advance_bucket" | "best_of_state", input: Uint8Array, paramsJson: string): Uint8Array {
+    const fn = this.exports[name];
+    if (!fn) throw new SieveWasmError(`${name} not exported (mode ${this.verificationMode})`);
+    const inBuf = this.writeBytes(input);
+    const params = this.writeBytes(new TextEncoder().encode(paramsJson));
+    const outPtr = this.exports.malloc(RENDER_OUT_CAP);
+    if (outPtr === 0) throw new SieveWasmError("wasm malloc failed");
+    try {
+      const len = fn(inBuf.ptr, inBuf.len, params.ptr, params.len, outPtr, RENDER_OUT_CAP);
+      if (len <= 0) throw new SieveWasmError(`${name} failed: rc=${len}`);
+      return new Uint8Array(this.exports.memory.buffer.slice(outPtr, outPtr + len));
+    } finally {
+      this.exports.free(outPtr);
+      this.exports.free(params.ptr);
+      this.exports.free(inBuf.ptr);
     }
   }
 

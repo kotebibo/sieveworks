@@ -145,11 +145,14 @@ served only to the current leaseholder).
   **mode-specific timeout** (B generations ≈ 256 × pop 64 × 1000-step sim…
   CAREFUL: that is 16M sim steps ≈ too slow for 8 s).
   **Sizing rule (load-bearing)**: pick B and sim length so ONE bucket
-  recompute ≤ 2 s in WASM-under-Node. With the cart-pole sim at ~10M
-  steps/s: B × pop × steps ≤ 2×10⁷ → e.g. pop 64, steps 300, B = 1
-  generation-batch of ~1000 evals… Concretely: define "generation" so a
-  bucket is ~1M evals-worth. Tune with a benchmark on day 1 of the week;
-  G/B/pop/steps land in job params, not code.
+  recompute ≤ 2 s in WASM-under-Node.
+  **MEASURED 2026-09-11 (flappy sim, worst case = full 3000-tick
+  survivors): 8,710 evals/s = 26.1M ticks/s under Node.** Therefore the
+  shipped defaults are: pop = 64, max_ticks = 3000, **B = 256**
+  generations/bucket (≈1.9 s recompute, safety margin under the 2 s
+  budget), **G = 8192** (32 buckets/chunk ≈ 60 s of worker compute per
+  chunk). Audit k = max(8, ceil(32/4)) = 8; half-skip catch ≈ 1/256 as
+  advertised. All four land in job params, not code.
 - Audit rate env `TRAINING_AUDIT_RATE_PCT` default 10; first-3 rule
   (PASSED-only counting per Spec 01 §9b) and record-claim 100% rule reused.
 - **Audit sample size scales with bucket count (review fix):** sample

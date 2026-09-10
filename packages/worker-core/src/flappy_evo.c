@@ -216,4 +216,187 @@ SIEVE_EXPORT int32_t trace_candidate(const uint8_t *cand, int32_t cand_len,
   return w;
 }
 
-SIEVE_EXPORT const char *spec_version(void) { return "sieveworks-flappy-evo/0.1.0"; }
+/* ------------------------------------------------------------------------
+ * Effort mode (training, verification_mode 2): the GA itself runs INSIDE
+ * the module so the whole trajectory is deterministic — every mutation
+ * draws from a counter-chained splitmix64, so state_{k+1} is a pure
+ * function of state_k and params. That purity is what lets the coordinator
+ * verify one 256-generation bucket by recomputing it from the committed
+ * predecessor checkpoint (Spec 03: the honest chain is unique).
+ *
+ * State layout (LE):
+ *   0   u32 magic 'SEVO'
+ *   4   u32 pop
+ *   8   u64 rng_counter
+ *   16  u64 generation
+ *   24  i64 best_score (best-ever — the chunk witness)
+ *   32  u8  best_genome[130]
+ *   162 u8  pad[6]
+ *   168 pop × u8 genome[130]
+ * ------------------------------------------------------------------------ */
+
+#define EVO_MAGIC 0x4F564553u /* "SEVO" */
+#define EVO_POP 64
+#define EVO_ELITE 12
+#define EVO_HDR 168
+#define EVO_STATE_LEN (EVO_HDR + EVO_POP * GENOME_LEN)
+
+typedef struct {
+  uint32_t magic, pop;
+  uint64_t rng_counter, generation;
+  int64_t best_score;
+} EvoHead;
+
+static uint64_t evo_rng(uint8_t *state) {
+  EvoHead *h = (EvoHead *)state;
+  return splitmix64(0xE501E501ULL ^ h->rng_counter++);
+}
+
+static int64_t run_genome(const uint8_t *genome, uint64_t salt, uint64_t max_ticks) {
+  const int16_t *g = (const int16_t *)genome;
+  Bird b = { (WORLD_H / 2) << Q, 0, 0, 0 };
+  uint64_t t = 0;
+  while (t < max_ticks && step(&b, salt, g)) t++;
+  return (int64_t)b.pipes_passed * 10000 + (int64_t)t;
+}
+
+static uint8_t *genome_at(uint8_t *state, uint32_t i) { return state + EVO_HDR + i * GENOME_LEN; }
+
+static int hexval(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+/* Optional coordinator-injected immigrant: "immigrant_hex":"<260 hex>" —
+ * frozen into chunk params at assignment (Spec 03 review fix). */
+static int scan_immigrant(const char *json, int32_t len, uint8_t out[GENOME_LEN]) {
+  const char *key = "immigrant_hex";
+  int32_t klen = 13;
+  for (int32_t i = 0; i + klen + 3 < len; i++) {
+    if (json[i] == '"' && memcmp(json + i + 1, key, (size_t)klen) == 0 && json[i + 1 + klen] == '"') {
+      int32_t j = i + klen + 2;
+      while (j < len && (json[j] == ':' || json[j] == ' ')) j++;
+      if (j >= len || json[j] != '"') return 0;
+      j++;
+      for (int32_t k = 0; k < GENOME_LEN; k++) {
+        if (j + 1 >= len) return 0;
+        int hi = hexval(json[j]), lo = hexval(json[j + 1]);
+        if (hi < 0 || lo < 0) return 0;
+        out[k] = (uint8_t)((hi << 4) | lo);
+        j += 2;
+      }
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Origin state from a 32-byte lineage seed: pop of random genomes, all
+ * randomness derived from the seed (Spec 03: origin forced by chunk spec). */
+SIEVE_EXPORT int32_t init_state(const uint8_t *lineage_seed, int32_t seed_len,
+                                const char *params, int32_t plen,
+                                uint8_t *out, int32_t cap) {
+  if (seed_len != 32 || cap < EVO_STATE_LEN) return -1;
+  EvoHead *h = (EvoHead *)out;
+  h->magic = EVO_MAGIC;
+  h->pop = EVO_POP;
+  h->generation = 0;
+  h->best_score = 0;
+  uint64_t s0 = 0;
+  for (int i = 0; i < 8; i++) s0 = (s0 << 8) | lineage_seed[i];
+  h->rng_counter = splitmix64(s0);
+  memset(out + 32, 0, EVO_HDR - 32);
+  for (uint32_t i = 0; i < EVO_POP; i++) {
+    uint8_t *g = genome_at(out, i);
+    for (int32_t b = 0; b < GENOME_LEN; b += 8) {
+      uint64_t r = evo_rng(out);
+      for (int k = 0; k < 8 && b + k < GENOME_LEN; k++) g[b + k] = (uint8_t)(r >> (8 * k));
+    }
+  }
+  uint8_t imm[GENOME_LEN];
+  if (scan_immigrant(params, plen, imm)) memcpy(genome_at(out, 0), imm, GENOME_LEN);
+  return EVO_STATE_LEN;
+}
+
+/* Advance gens_per_bucket generations. Deterministic throughout:
+ * fitness-sort ties resolve to the LOWER index; parents and mutations come
+ * from the counter PRNG. Copies state in, writes advanced state out. */
+SIEVE_EXPORT int32_t advance_bucket(const uint8_t *state_in, int32_t state_len,
+                                    const char *params, int32_t plen,
+                                    uint8_t *out, int32_t cap) {
+  if (state_len != EVO_STATE_LEN || cap < EVO_STATE_LEN) return -1;
+  const EvoHead *hin = (const EvoHead *)state_in;
+  if (hin->magic != EVO_MAGIC || hin->pop != EVO_POP) return -2;
+  uint64_t salt, max_ticks;
+  if (!parse(params, plen, &salt, &max_ticks)) return -3;
+  uint64_t gens = 256;
+  scan_u64(params, plen, "gens_per_bucket", &gens);
+  if (gens < 1 || gens > 4096) return -4;
+
+  memcpy(out, state_in, EVO_STATE_LEN);
+  EvoHead *h = (EvoHead *)out;
+
+  int64_t fit[EVO_POP];
+  uint32_t order[EVO_POP];
+  uint8_t scratch[EVO_POP * GENOME_LEN];
+
+  for (uint64_t gen = 0; gen < gens; gen++) {
+    for (uint32_t i = 0; i < EVO_POP; i++) {
+      fit[i] = run_genome(genome_at(out, i), salt, max_ticks);
+      order[i] = i;
+    }
+    /* insertion sort desc by fitness, ties -> lower original index */
+    for (uint32_t i = 1; i < EVO_POP; i++) {
+      uint32_t v = order[i];
+      int32_t j = (int32_t)i - 1;
+      while (j >= 0 && (fit[order[j]] < fit[v] || (fit[order[j]] == fit[v] && order[j] > v))) {
+        order[j + 1] = order[j];
+        j--;
+      }
+      order[(uint32_t)(j + 1)] = v;
+    }
+    if (fit[order[0]] > h->best_score) {
+      h->best_score = fit[order[0]];
+      memcpy(out + 32, genome_at(out, order[0]), GENOME_LEN);
+    }
+    /* next generation into scratch: elite copied, rest mutated children */
+    for (uint32_t i = 0; i < EVO_ELITE; i++) {
+      memcpy(scratch + i * GENOME_LEN, genome_at(out, order[i]), GENOME_LEN);
+    }
+    for (uint32_t i = EVO_ELITE; i < EVO_POP; i++) {
+      uint32_t pick = (uint32_t)(evo_rng(out) % (2 * EVO_ELITE));
+      uint8_t *child = scratch + i * GENOME_LEN;
+      memcpy(child, genome_at(out, order[pick]), GENOME_LEN);
+      for (int32_t b = 0; b < GENOME_LEN; b++) {
+        uint64_t r = evo_rng(out);
+        if ((r & 0x7f) < 10) { /* ~8% mutation rate */
+          child[b] = (uint8_t)(child[b] + (uint8_t)((r >> 8) & 0x3f) - 32);
+        }
+      }
+    }
+    memcpy(out + EVO_HDR, scratch, EVO_POP * GENOME_LEN);
+    h->generation++;
+  }
+  return EVO_STATE_LEN;
+}
+
+/* The chunk witness: best-ever genome + score, O(1) to extract and O(one
+ * evaluate_candidate) for the coordinator to verify. out = i64 score LE ‖
+ * genome[130]. */
+SIEVE_EXPORT int32_t best_of_state(const uint8_t *state, int32_t state_len,
+                                   const char *params, int32_t plen,
+                                   uint8_t *out, int32_t cap) {
+  (void)params; (void)plen;
+  if (state_len != EVO_STATE_LEN || cap < 8 + GENOME_LEN) return -1;
+  const EvoHead *h = (const EvoHead *)state;
+  if (h->magic != EVO_MAGIC) return -2;
+  memcpy(out, &h->best_score, 8);
+  memcpy(out + 8, state + 32, GENOME_LEN);
+  return 8 + GENOME_LEN;
+}
+
+SIEVE_EXPORT int32_t verification_mode(void) { return 2; }
+
+SIEVE_EXPORT const char *spec_version(void) { return "sieveworks-flappy-evo/0.2.0"; }
