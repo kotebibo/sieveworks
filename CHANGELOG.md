@@ -3,6 +3,25 @@
 All Crypto World's Fair work (Sep 14 – Oct 12, 2026) is logged here, newest
 first.
 
+## 2026-09-11 (later) — Prize bounties + "AI learns to fly" live on prod
+
+- **Prize bounties**: fund a winner-takes-all pot for the best verified
+  CANDIDATE (a byte blob scored by the module in one deterministic call)
+  above a threshold by a deadline. Open submissions — no chunks, no leases;
+  every submission is re-verified immediately in a dedicated evaluation
+  pool; scores are public, candidate bytes stay sealed until close.
+  Settlement reuses the existing escrow + claim-voucher machinery
+  unchanged. Each job carries a FORCED unique landscape salt, so winning
+  genomes don't transfer between bounties.
+- **"AI learns to fly" module**: 130-byte neural-net genomes fly a
+  flappy-style course generated from the job salt. Integer-only physics.
+  A miniature GA masters a course (40/40 pipes) in ~20 generations.
+- **/train/[job]**: evolve in your browser, watch the best bird fly live,
+  submit your champion, sealed leaderboard. **/bounties/new** grows a prize
+  toggle (prize, threshold, deadline) with the same wallet-funding flow.
+- Proven E2E on devnet prod with a real 0.005 SOL escrow: honest submission
+  verified, inflated claim rejected, leaderboard sealed.
+
 ## 2026-09-11 — Verification generalizes: `output_hash` mode live on prod
 
 Colosseum's registration page says "start building right away" — so we did.

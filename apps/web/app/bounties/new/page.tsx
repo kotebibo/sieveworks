@@ -42,6 +42,11 @@ function NewBountyInner() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const [priceSol, setPriceSol] = useState("0.0001");
+  // prize bounties (Spec 02)
+  const [kind, setKind] = useState<"coverage" | "prize">("coverage");
+  const [prizeSol, setPrizeSol] = useState("0.005");
+  const [threshold, setThreshold] = useState("50000");
+  const [deadlineHours, setDeadlineHours] = useState(24);
   const [chain, setChain] = useState<ChainInfo | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
 
@@ -65,6 +70,7 @@ function NewBountyInner() {
 
   function selectSpec(s: WorkerSpec) {
     setSpecHash(s.hash);
+    setKind(s.supports_candidates ? "prize" : "coverage");
     setParamsJson(JSON.stringify(s.example_params, null, 0));
     if (s.default_range_start) setSpaceStart(s.default_range_start);
     if (s.default_range_end) setSpaceEnd(s.default_range_end);
@@ -84,9 +90,12 @@ function NewBountyInner() {
     return { chunks, coverage, durationSec, priceLamports, budgetLamports };
   }, [space, swarm, seedsPerSec, priceSol]);
 
-  const priced = econ.priceLamports > 0;
+  const isPrize = kind === "prize";
+  const prizeLamports = BigInt(Math.round((Number(prizeSol) || 0) * LAMPORTS));
+  const priced = isPrize ? prizeLamports > 0n : econ.priceLamports > 0;
   // budget + escrow rent (~0.0017) + tx fee margin
-  const lamportsNeeded = priced ? econ.budgetLamports + 3_000_000n : 0n;
+  const fundLamports = isPrize ? prizeLamports : econ.budgetLamports;
+  const lamportsNeeded = priced ? fundLamports + 3_000_000n : 0n;
   const insufficient = priced && balance !== null && BigInt(balance) < lamportsNeeded;
 
   const durationLabel = econ.durationSec < 90 ? `${Math.round(econ.durationSec)}s`
@@ -104,17 +113,35 @@ function NewBountyInner() {
     try { parsed = JSON.parse(paramsJson); } catch { setError("params must be valid JSON"); return; }
     setPosting(true);
     setPhase("creating");
-    const r = await createJobReq({
-      title: title || `${spec?.name} search`,
-      worker_spec_hash: specHash,
-      game: spec?.name ?? "compute",
-      params: parsed,
-      search_space_start: spaceStart,
-      search_space_end: spaceEnd,
-      seeds_per_sec: seedsPerSec,
-      price_per_chunk_lamports: String(econ.priceLamports),
-      budget_lamports: econ.budgetLamports.toString(),
-    }, token);
+    const r = await createJobReq(
+      isPrize
+        ? {
+            title: title || `${spec?.name} prize`,
+            worker_spec_hash: specHash,
+            game: spec?.name ?? "evolution",
+            params: parsed,
+            search_space_start: "0",
+            search_space_end: "1",
+            bounty_kind: "prize",
+            prize_lamports: prizeLamports.toString(),
+            threshold_score: threshold,
+            deadline_at: new Date(Date.now() + deadlineHours * 3600_000).toISOString(),
+            price_per_chunk_lamports: "0",
+            budget_lamports: "0",
+          }
+        : {
+            title: title || `${spec?.name} search`,
+            worker_spec_hash: specHash,
+            game: spec?.name ?? "compute",
+            params: parsed,
+            search_space_start: spaceStart,
+            search_space_end: spaceEnd,
+            seeds_per_sec: seedsPerSec,
+            price_per_chunk_lamports: String(econ.priceLamports),
+            budget_lamports: econ.budgetLamports.toString(),
+          },
+      token
+    );
     if (!r.job_id) {
       setPosting(false); setPhase("idle");
       setError(typeof r.error === "string" ? r.error : "failed to post");
@@ -135,8 +162,8 @@ function NewBountyInner() {
         jobUuid: r.job_id,
         funder: publicKey!,
         coordinator: new PublicKey(chain!.coordinator!),
-        budgetLamports: econ.budgetLamports,
-        pricePerChunkLamports: BigInt(econ.priceLamports),
+        budgetLamports: fundLamports,
+        pricePerChunkLamports: isPrize ? 0n : BigInt(econ.priceLamports),
       });
       const sig = await sendTransaction(new Transaction().add(ix), connection);
       setPhase("confirming");
@@ -169,12 +196,46 @@ function NewBountyInner() {
             </select>
           </Field>
           {spec?.description && <p className="text-xs text-[var(--text-dim)] -mt-2">{spec.description}</p>}
+          {spec?.supports_candidates && (
+            <Field label="bounty type">
+              <div className="flex gap-2">
+                {(["prize", "coverage"] as const).map((k) => (
+                  <button key={k} type="button" onClick={() => setKind(k)}
+                    className="num text-xs px-3 py-1.5 border transition-colors"
+                    style={kind === k
+                      ? { borderColor: "var(--accent)", color: "var(--accent)" }
+                      : { borderColor: "var(--border)", color: "var(--text-dim)" }}>
+                    {k === "prize" ? "◆ prize — best result wins" : "▤ coverage — pay per chunk"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
           <Field label="title"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${spec?.name ?? ""} search`}
             className="w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" /></Field>
           <Field label="params (JSON, passed to the module)">
             <textarea value={paramsJson} onChange={(e) => setParamsJson(e.target.value)} rows={2}
               className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-xs text-[var(--text)]" />
           </Field>
+          {isPrize && (
+            <>
+              <Field label="prize (SOL) — winner takes all">
+                <input value={prizeSol} onChange={(e) => setPrizeSol(e.target.value)} inputMode="decimal"
+                  className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="score threshold to win">
+                  <input value={threshold} onChange={(e) => setThreshold(e.target.value)} inputMode="numeric"
+                    className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" />
+                </Field>
+                <Field label={`deadline: ${deadlineHours}h from post`}>
+                  <input type="range" min={2} max={168} value={deadlineHours} onChange={(e) => setDeadlineHours(Number(e.target.value))}
+                    className="w-full accent-[var(--accent)] mt-2" />
+                </Field>
+              </div>
+            </>
+          )}
+          {!isPrize && (<>
           <div className="grid grid-cols-2 gap-3">
             <Field label="range start"><input value={spaceStart} onChange={(e) => setSpaceStart(e.target.value)}
               className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" /></Field>
@@ -189,6 +250,7 @@ function NewBountyInner() {
             <input value={priceSol} onChange={(e) => setPriceSol(e.target.value)} inputMode="decimal"
               className="num w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm" />
           </Field>
+          </>)}
           {priced && (
             <div className="text-xs text-[var(--text-dim)] -mt-1 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -214,7 +276,15 @@ function NewBountyInner() {
         </div>
 
         <div className="panel ticked p-4" style={{ backgroundImage: "radial-gradient(var(--mesh) 1px, transparent 1px)", backgroundSize: "22px 22px" }}>
-          <div className="barlabel">what your search covers</div>
+          <div className="barlabel">{isPrize ? "what your prize buys" : "what your search covers"}</div>
+          {isPrize ? (
+            <dl className="mt-3 space-y-2 num text-sm">
+              <Row k="prize (locked on post)" v={`◎${solStr(prizeLamports.toString())}`} accent />
+              <Row k="winning threshold" v={threshold} />
+              <Row k="deadline" v={`${deadlineHours}h after posting`} />
+              <Row k="verification" v="1 re-evaluation per submission" />
+            </dl>
+          ) : (
           <dl className="mt-3 space-y-2 num text-sm">
             <Row k="work units (chunks)" v={fmt(econ.chunks)} />
             <Row k="seeds searched" v={fmt(space)} />
@@ -223,8 +293,11 @@ function NewBountyInner() {
             <Row k="price / verified chunk" v={priced ? `◎${solStr(econ.priceLamports)}` : "free"} />
             <Row k="total budget (locked on post)" v={priced ? `◎${solStr(econ.budgetLamports.toString())}` : "—"} accent />
           </dl>
+          )}
           <p className="mt-4 text-[11px] text-[var(--text-faint)] leading-relaxed">
-            {priced
+            {isPrize
+              ? "Posting opens your wallet to lock the prize in the job's on-chain escrow (devnet). Anyone can train and submit; every submission is re-verified by one deterministic evaluation, and the best verified score above the threshold at the deadline claims the prize."
+              : priced
               ? "Posting opens your wallet to lock the budget in the job's on-chain escrow (devnet). Contributors are paid per verified chunk from it; you can reclaim whatever's unspent by closing the job."
               : "Sieveworks sells targeted search, not exhaustive: a budget buys coverage of a chosen region. Set a price per chunk to fund this bounty on-chain (devnet)."}
           </p>
@@ -238,7 +311,7 @@ function NewBountyInner() {
             {phase === "creating" ? "creating job…"
               : phase === "funding" ? "approve in wallet…"
               : phase === "confirming" ? "confirming on devnet…"
-              : priced ? `Post & fund ◎${solStr(econ.budgetLamports.toString())}` : "Post bounty"}
+              : priced ? `Post & fund ◎${solStr(fundLamports.toString())}` : "Post bounty"}
           </button>
         ) : (
           <button onClick={signIn} disabled={signingIn}

@@ -116,6 +116,8 @@ export interface WorkerSpec {
   mine: boolean;
   publisher: string | null;
   open_jobs: number;
+  verification_mode?: string;
+  supports_candidates?: boolean;
 }
 
 // Optionally authed: pass the session token to include your own private modules.
@@ -203,6 +205,10 @@ export interface CreateJobBody {
   seeds_per_sec?: number;
   budget_lamports?: string;
   price_per_chunk_lamports?: string;
+  bounty_kind?: string;
+  prize_lamports?: string;
+  threshold_score?: string;
+  deadline_at?: string;
 }
 
 export async function createJobReq(
