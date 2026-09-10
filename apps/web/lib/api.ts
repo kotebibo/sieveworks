@@ -128,6 +128,7 @@ export interface WorkerSpec {
   open_jobs: number;
   verification_mode?: string;
   supports_candidates?: boolean;
+  has_viz?: boolean;
 }
 
 // Optionally authed: pass the session token to include your own private modules.
@@ -140,6 +141,12 @@ export async function fetchSpecs(token?: string | null): Promise<{ specs: Worker
   return (await res.json()) as { specs: WorkerSpec[] };
 }
 export const specArtifactUrl = (hash: string) => `${COORDINATOR_URL}/v1/specs/${hash}/artifact`;
+
+export async function fetchModuleViz(hash: string): Promise<string | null> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/specs/${hash}/viz`);
+  if (!res.ok) return null;
+  return ((await res.json()) as { viz_js: string | null }).viz_js;
+}
 
 // Publisher flips a module public ↔ private.
 export async function setSpecVisibility(hash: string, isPrivate: boolean, token: string): Promise<{ ok: boolean; is_private?: boolean; error?: string }> {

@@ -350,6 +350,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
              ws.example_params, ws.default_range_start::text, ws.default_range_end::text,
              ws.is_builtin, ws.is_private, ws.publisher, ws.created_at, ws.verification_mode, ws.supports_candidates,
              (ws.publisher is not null and ws.publisher = ${caller}) as mine,
+             (ws.viz_js is not null) as has_viz,
              count(j.id) filter (where j.status = 'open')::int as open_jobs
       from worker_specs ws
       left join jobs j on j.worker_spec_hash = ws.hash
@@ -357,6 +358,16 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       group by ws.hash
       order by ws.is_builtin desc, ws.created_at asc`;
     return { specs };
+  });
+
+  // Author-supplied visualization code (sandboxed client-side, so public
+  // like the artifact). Null when the module ships none.
+  app.get("/v1/specs/:hash/viz", async (req, reply) => {
+    const { hash } = req.params as { hash: string };
+    const [row] = await sql<{ viz_js: string | null }[]>`select viz_js from worker_specs where hash = ${hash}`;
+    if (!row) return reply.code(404).send({ error: "unknown module" });
+    reply.header("cache-control", "public, max-age=300");
+    return { viz_js: row.viz_js };
   });
 
   // Serve a registered module's artifact by hash. Public/built-in modules are
@@ -414,13 +425,14 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (!publisher) return;
     const parts = req.parts();
     let wasm: Buffer | null = null;
-    let name = "", description = "", exampleParams = "{}", isPrivate = false;
+    let name = "", description = "", exampleParams = "{}", isPrivate = false, vizJs: string | null = null;
     for await (const part of parts) {
       if (part.type === "file") wasm = await part.toBuffer();
       else if (part.fieldname === "name") name = String(part.value).slice(0, 120);
       else if (part.fieldname === "description") description = String(part.value).slice(0, 2000);
       else if (part.fieldname === "example_params") exampleParams = String(part.value).slice(0, 4000);
       else if (part.fieldname === "visibility") isPrivate = String(part.value) === "private";
+      else if (part.fieldname === "viz_js") vizJs = String(part.value).slice(0, 96_000) || null;
     }
     if (!wasm || wasm.length === 0) return reply.code(400).send({ error: "no .wasm file" });
     if (wasm.length > 8 * 1024 * 1024) return reply.code(400).send({ error: "module too large (8MB max)" });
@@ -441,11 +453,11 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return reply.code(200).send({ ok: true, hash: verdict.hash, spec_version: verdict.spec_version, note: "already registered by another publisher; metadata unchanged" });
     }
     await sql`
-      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher, verification_mode, supports_candidates)
+      insert into worker_specs (hash, name, description, spec_version, wasm, conformance, example_params, is_builtin, is_private, publisher, verification_mode, supports_candidates, viz_js)
       values (${verdict.hash}, ${name}, ${description || null}, ${verdict.spec_version ?? "unknown"},
               ${wasm}, ${sql.json({ passed: true, buckets_checked: verdict.buckets_checked, sample: verdict.sample } as never)},
-              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher}, ${verdict.verification_mode ?? "witness_extremum"}, ${verdict.supports_candidates ?? false})
-      on conflict (hash) do update set name = excluded.name, description = excluded.description, is_private = ${isPrivate}, publisher = ${publisher}`;
+              ${sql.json(params as never)}, false, ${isPrivate}, ${publisher}, ${verdict.verification_mode ?? "witness_extremum"}, ${verdict.supports_candidates ?? false}, ${vizJs})
+      on conflict (hash) do update set name = excluded.name, description = excluded.description, is_private = ${isPrivate}, publisher = ${publisher}, viz_js = coalesce(${vizJs}, worker_specs.viz_js)`;
     await notify(publisher, "module_registered", `Module "${name}" registered`, `Your worker module passed the conformance gate and is ${isPrivate ? "private (visible only to you)" : "live"}.`, "/modules");
     events.emit("spec_registered", { hash: verdict.hash, name });
     return { ok: true, hash: verdict.hash, spec_version: verdict.spec_version, is_private: isPrivate, conformance: verdict };

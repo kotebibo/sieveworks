@@ -11,6 +11,7 @@ import {
   fetchJobResults,
   fetchJobLineages,
   fetchJobSwarm,
+  fetchModuleViz,
   type JobLineages,
   notifyFunded,
   closeFundingReq,
@@ -31,10 +32,11 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const [results, setResults] = useState<RecentResult[]>([]);
   const [cells, setCells] = useState("");
   const [lineages, setLineages] = useState<JobLineages["lineages"]>([]);
+  const [hasViz, setHasViz] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
-      fetchJob(id).then(setDetail).catch(() => {});
+      fetchJob(id).then((d) => { setDetail(d); fetchModuleViz(String(d.job.worker_spec_hash)).then((v) => setHasViz(!!v)).catch(() => {}); }).catch(() => {});
       fetchJobResults(id).then((r) => setResults(r.results)).catch(() => {});
       fetchJobSwarm(id).then((r) => setCells(r.cells)).catch(() => {});
       fetchJobLineages(id).then((r) => setLineages(r.lineages)).catch(() => setLineages([]));
@@ -102,7 +104,10 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
             {order.filter((s) => states[s]).map((s) => <span key={s}><Badge state={s} /> <LiveNum value={String(states[s])} /></span>)}
           </div>
         </div>
-        <Button href="/contribute" variant="primary">▶ CONTRIBUTE</Button>
+        <div className="flex flex-col gap-2 items-end">
+          <Button href="/contribute" variant="primary">▶ CONTRIBUTE</Button>
+          {hasViz && <Button href={`/viz/${id}`}>◱ visualize</Button>}
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">

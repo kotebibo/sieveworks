@@ -183,6 +183,7 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
   const [description, setDescription] = useState("");
   const [params, setParams] = useState("{}");
   const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [vizJs, setVizJs] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
 
@@ -196,11 +197,12 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
     form.append("description", description);
     form.append("example_params", params);
     form.append("visibility", visibility);
+    if (vizJs.trim()) form.append("viz_js", vizJs);
     form.append("wasm", file);
     try {
       const r = await uploadSpec(form, token);
       setResult(r);
-      if (r.ok) { setName(""); setDescription(""); onDone(); }
+      if (r.ok) { setName(""); setDescription(""); setVizJs(""); onDone(); }
     } catch (e) {
       setResult({ ok: false, reason: String(e) });
     } finally {
@@ -237,6 +239,11 @@ function UploadPanel({ onDone }: { onDone: () => void }) {
         <label className="text-xs text-[var(--text-dim)] sm:col-span-2">
           example params (JSON — passed to the module)
           <textarea value={params} onChange={(e) => setParams(e.target.value)} rows={2}
+            className="num mt-1 w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-xs text-[var(--text)]" />
+        </label>
+        <label className="text-xs text-[var(--text-dim)] sm:col-span-2">
+          visualization (optional JS) — defines <code className="num">globalThis.render({"{"}ctx, width, height, t, data, params, module{"}"})</code>; runs sandboxed (no network, no wallet). <a href="/docs#viz" className="text-[var(--accent)] hover:underline">docs</a>
+          <textarea value={vizJs} onChange={(e) => setVizJs(e.target.value)} rows={3} placeholder="globalThis.render = ({ ctx, width, height, t, data, params, module }) => { /* draw */ };"
             className="num mt-1 w-full border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-xs text-[var(--text)]" />
         </label>
       </div>
