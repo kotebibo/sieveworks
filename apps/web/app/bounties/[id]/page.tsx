@@ -101,8 +101,16 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
         <Panel label="◢ swarm" right={`${fmt(done)} / ${fmt(total)}`}>
           {cells ? <Sieve cells={cells} /> : <div className="h-40 skeleton" />}
         </Panel>
-        <Panel label="◆ current record">
-          {best ? (
+        <Panel label={isExtremum ? "◆ current record" : "◆ output"}>
+          {!isExtremum ? (
+            <div className="text-sm space-y-2">
+              <p className="text-[var(--text-dim)] text-xs">
+                This job produces verified output, not scores — watch the
+                swarm assemble it.
+              </p>
+              <Button href={`/render/${id}`} variant="primary">▶ VIEW RENDER</Button>
+            </div>
+          ) : best ? (
             <div className="num text-sm space-y-1.5">
               <div className="font-display text-3xl" style={{ color: "var(--verified)" }}>{best.extremum_score}</div>
               <div className="text-[var(--text-dim)]">seed {best.witness_seed}</div>

@@ -661,6 +661,30 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     });
   });
 
+  // ---- delivered outputs (mode 2, public) --------------------------------
+  // Tiles for the render view: absolute unit index = chunk range_start +
+  // bucket_index (bucket_size is 1 for render jobs; general case handled).
+  app.get("/v1/jobs/:id/outputs", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [job] = await sql<{ verification_mode: string; bucket_size: number }[]>`
+      select verification_mode, bucket_size from jobs where id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "unknown job" });
+    if (job.verification_mode !== "output_hash") return reply.code(409).send({ error: "job has no outputs" });
+    const rows = await sql<{ bucket_index: number; range_start: string; bytes: Buffer }[]>`
+      select o.bucket_index, c.range_start::text, o.bytes
+      from chunk_outputs o
+      join results r on r.id = o.result_id
+      join chunks c on c.id = r.chunk_id
+      where c.job_id = ${id} and c.state = 'accepted'
+      order by c.range_start, o.bucket_index`;
+    return {
+      outputs: rows.map((r) => ({
+        unit: (BigInt(r.range_start) + BigInt(r.bucket_index) * BigInt(job.bucket_size)).toString(),
+        bytes_b64: Buffer.from(r.bytes).toString("base64"),
+      })),
+    };
+  });
+
   // ---- output delivery (mode 2) ------------------------------------------
   // Digest-checked against the committed Merkle root; only matching bytes
   // are ever stored, so no signature is needed — correctness is the auth.

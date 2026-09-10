@@ -34,6 +34,16 @@ export interface JobDetail {
   chunk_states: Record<string, number>;
 }
 
+export interface JobOutputs {
+  outputs: { unit: string; bytes_b64: string }[];
+}
+
+export async function fetchJobOutputs(jobId: string): Promise<JobOutputs> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/jobs/${jobId}/outputs`);
+  if (!res.ok) throw new Error(`outputs fetch failed: ${res.status}`);
+  return (await res.json()) as JobOutputs;
+}
+
 export interface RecentResult {
   id: string;
   extremum_score: string | null;
