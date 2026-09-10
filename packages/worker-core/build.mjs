@@ -128,11 +128,33 @@ function buildSpawnqWasm() {
   console.log(`spawn_quality worker_spec_hash: ${hash}`);
 }
 
+// mandel: first output_hash (mode 1) module — WASM-only, no native leg (the
+// WASM artifact IS the reference; there is no separate native verifier path
+// for render modules, and the conformance gate proves determinism).
+const MANDEL_SRC = join(root, "src", "mandel.c");
+
+function buildMandelWasm() {
+  const outDir = join(root, "out", "wasm");
+  mkdirSync(outDir, { recursive: true });
+  const wasm = join(outDir, "mandel.wasm");
+  run(findEmcc(), [
+    ...COMMON_FLAGS, "-sSTANDALONE_WASM", "--no-entry", "-sALLOW_MEMORY_GROWTH",
+    "-sEXPORTED_FUNCTIONS=_render_bucket,_verification_mode,_spec_version,_malloc,_free",
+    "-o", wasm, MANDEL_SRC,
+  ]);
+  const hash = createHash("sha256").update(readFileSync(wasm)).digest("hex");
+  writeFileSync(join(outDir, "mandel.wasm.sha256"), hash + "\n");
+  console.log(`wasm: ${wasm}`);
+  console.log(`mandel worker_spec_hash: ${hash}`);
+}
+
 const target = process.argv[2] ?? "all";
 if (target === "spawnq-native") {
   buildSpawnqNative();
 } else if (target === "spawnq-wasm") {
   buildSpawnqWasm();
+} else if (target === "mandel-wasm") {
+  buildMandelWasm();
 } else {
   if (target === "native" || target === "all") buildNative();
   if (target === "wasm" || target === "all") buildWasm();

@@ -45,6 +45,17 @@ const BUILTINS = [
     default_range_start: "0",
     default_range_end: "5000000",
   },
+  {
+    // First output_hash (mode 1) module: the range indexes 64x64-pixel TILES
+    // of a grid render; workers deliver tile bytes, the swarm assembles the
+    // image. Jobs for render modules use bucket_size 1 (one tile per leaf).
+    file: "mandel.wasm",
+    name: "Mandelbrot render",
+    description: "Distributed fractal rendering — each unit is a 64×64 tile of the image, computed in fixed-point integer math and verified by recomputing sampled tiles. Proof that verification generalizes beyond search: any deterministic output, not just extremum claims.",
+    example_params: { grid: 2048, tile: 64, max_iter: 500 },
+    default_range_start: "0",
+    default_range_end: "1024",
+  },
 ];
 
 class ModuleRegistry {

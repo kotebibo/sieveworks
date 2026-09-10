@@ -30,14 +30,14 @@ export interface GlobalStats {
 }
 
 export interface JobDetail {
-  job: Record<string, unknown> & { id: string; title: string; params: Record<string, unknown> };
+  job: Record<string, unknown> & { id: string; title: string; params: Record<string, unknown>; verification_mode?: string };
   chunk_states: Record<string, number>;
 }
 
 export interface RecentResult {
   id: string;
-  extremum_score: string;
-  witness_seed: string;
+  extremum_score: string | null;
+  witness_seed: string | null;
   merkle_root: string;
   duration_ms: number;
   verification_state: string;

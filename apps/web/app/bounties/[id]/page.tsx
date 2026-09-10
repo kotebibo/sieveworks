@@ -53,10 +53,20 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
   const states = detail.chunk_states;
   const total = Object.values(states).reduce((a, b) => a + b, 0);
   const done = states.accepted ?? 0;
-  const best = results.reduce<RecentResult | null>(
-    (acc, r) => (acc === null || BigInt(r.extremum_score) > BigInt(acc.extremum_score) ? r : acc),
-    null
-  );
+  // Non-extremum modes (output_hash) have no scores — null-guard the fold
+  // and skip score UI entirely for those jobs.
+  const isExtremum = (detail.job.verification_mode ?? "witness_extremum") === "witness_extremum";
+  const best = isExtremum
+    ? results.reduce<RecentResult | null>(
+        (acc, r) =>
+          r.extremum_score == null
+            ? acc
+            : acc === null || BigInt(r.extremum_score) > BigInt(acc.extremum_score ?? "0")
+              ? r
+              : acc,
+        null
+      )
+    : null;
   const order = ["pending", "leased", "submitted", "verifying", "challenged", "accepted", "rejected"];
   const priced = BigInt(String(detail.job.price_per_chunk_lamports ?? "0")) > 0n;
 
@@ -134,8 +144,8 @@ export default function JobPage({ params }: { params: Promise<{ id: string }> })
               {results.map((r) => (
                 <tr key={r.id} className="border-b border-[var(--border)]">
                   <td className="px-4 py-1.5 whitespace-nowrap text-[var(--text-dim)]">[{r.range_start}, {r.range_end})</td>
-                  <td className="px-4 py-1.5">{r.extremum_score}</td>
-                  <td className="px-4 py-1.5">{r.witness_seed}</td>
+                  <td className="px-4 py-1.5">{r.extremum_score ?? "—"}</td>
+                  <td className="px-4 py-1.5">{r.witness_seed ?? "—"}</td>
                   <td className="px-4 py-1.5"><Mono value={r.wallet_address} kind="address" /></td>
                   <td className="px-4 py-1.5 text-[var(--text-dim)]">{(r.duration_ms / 1000).toFixed(1)}s</td>
                   <td className="px-4 py-1.5"><Badge state={r.verification_state} /></td>

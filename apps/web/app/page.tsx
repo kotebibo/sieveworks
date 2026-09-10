@@ -27,9 +27,10 @@ export default function Home() {
         if (s.job_id) {
           fetchJobResults(s.job_id).then((r) => {
             const best = r.results
-              .filter((x) => x.verification_state === "passed")
-              .reduce<typeof r.results[number] | null>((a, x) => (a === null || BigInt(x.extremum_score) > BigInt(a.extremum_score) ? x : a), null);
-            if (best) setWitness((w) => w ?? { score: best.extremum_score, seed: best.witness_seed });
+              .filter((x) => x.verification_state === "passed" && x.extremum_score != null)
+              .reduce<typeof r.results[number] | null>((a, x) => (a === null || BigInt(x.extremum_score!) > BigInt(a.extremum_score!) ? x : a), null);
+            if (best && best.extremum_score != null && best.witness_seed != null)
+              setWitness((w) => w ?? { score: best.extremum_score!, seed: best.witness_seed! });
           }).catch(() => {});
         }
       }).catch(() => {});
