@@ -73,12 +73,14 @@ Colosseum's registration page says "start building right away" — so we did.
   signature still verifies (tested both shapes, proven live).
 - **Hardening** (from the pre-window adversarial review): the mandatory
   first-3 audit window now counts only PASSED results — three sacrificial
-  failures no longer age a wallet out of 100% auditing. The `pre-cwf` git tag marks the pre-competition baseline: the full
-platform as shipped solo Aug 24–31 (verification pipeline, module registry,
-browser + CLI workers, on-chain escrow/attestation/claims on devnet) plus
-the Sep 1–10 polish window (sievework.com, docs site, pitch assets).
+  failures no longer age a wallet out of 100% auditing.
 
 ## [pre-cwf baseline] — 2026-09-11
+
+The `pre-cwf` git tag marks the pre-competition baseline: the full platform
+as shipped solo Aug 24–31 (verification pipeline, module registry, browser +
+CLI workers, on-chain escrow/attestation/claims on devnet) plus the
+Sep 1–10 polish window (sievework.com, docs site, pitch assets).
 
 - Judge-first README pass: live link, honest stake/slash status, CWF section.
 - Implementation specs for the five CWF build fronts in `plans/cwf/`

@@ -557,6 +557,14 @@ export async function deliverTrainingState(
   const bestScore = new DataView(witness.buffer, witness.byteOffset).getBigInt64(0, true);
   const bestGenome = Buffer.from(witness.slice(8));
 
+  // Keep the final state per chunk (bucket_index = buckets_count marks it):
+  // the slow-lane re-audit replays any accepted chunk from its predecessor's
+  // stored state, catching post-acceptance fabrication retroactively.
+  await sql`
+    insert into chunk_outputs (result_id, bucket_index, bytes)
+    values (${resultId}, ${row.buckets_count}, ${Buffer.from(state)})
+    on conflict do nothing`;
+
   const G = BigInt(row.chunk_size);
   const gensDone = BigInt(row.generation_offset ?? "0") + G;
   await sql`
@@ -597,6 +605,66 @@ export async function deliverTrainingState(
   });
   await maybeCompleteJob(row.job_id);
   return { ok: true };
+}
+
+/** Slow-lane re-audit (Spec 03 hardening): training chunks are sequential
+ * state, so one unaudited fabrication poisons everything after it — and
+ * nothing re-checks accepted history. This lane picks ONE random accepted
+ * training chunk per invocation and replays it IN FULL (origin → final)
+ * against its stored endpoints. A mismatch flags the lineage and records
+ * the catch; there is no clawback, so the flag IS the honest record. */
+export async function slowLaneReaudit(deps: VerifyDeps): Promise<number> {
+  const [pick] = await sql`
+    select c.id as chunk_id, c.range_start::text, c.range_end::text,
+           c.lineage_id, c.generation_offset::text,
+           r.id as result_id, r.buckets_count,
+           j.id as job_id, j.params, j.worker_spec_hash, j.chunk_size::text
+    from chunks c
+    join jobs j on j.id = c.job_id and j.verification_mode = 'training'
+    join results r on r.chunk_id = c.id and r.verification_state = 'passed'
+    where c.state = 'accepted' and c.lineage_id is not null
+    order by random()
+    limit 1`;
+  if (!pick) return 0;
+  const paramsJson = JSON.stringify(pick.params);
+
+  // Endpoints: the chunk's own stored final state, and its origin (derived
+  // for offset 0, else the predecessor chunk's stored final state).
+  const [finalRow] = await sql<{ bytes: Buffer }[]>`
+    select bytes from chunk_outputs
+    where result_id = ${pick.result_id} and bucket_index = ${pick.buckets_count}`;
+  if (!finalRow) return 0; // pre-hardening chunk without a stored state — skip
+  let originB64: string;
+  if (pick.generation_offset === "0" || pick.generation_offset === null) {
+    const seedHex = Buffer.from(lineageSeed32(pick.job_id, pick.lineage_id)).toString("hex");
+    originB64 = await deps.bucketPool.initStateB64(pick.worker_spec_hash, seedHex, paramsJson);
+  } else {
+    const [prev] = await sql<{ bytes: Buffer }[]>`
+      select o.bytes from chunks pc
+      join results pr on pr.chunk_id = pc.id and pr.verification_state = 'passed'
+      join chunk_outputs o on o.result_id = pr.id and o.bucket_index = pr.buckets_count
+      where pc.lineage_id = ${pick.lineage_id} and pc.range_end = ${pick.range_start}`;
+    if (!prev) return 0;
+    originB64 = Buffer.from(prev.bytes).toString("base64");
+  }
+
+  let state = originB64;
+  for (let k = 0; k < pick.buckets_count; k++) {
+    state = await deps.bucketPool.advanceStateB64(pick.worker_spec_hash, state, paramsJson);
+  }
+  const replayed = Buffer.from(state, "base64");
+  if (Buffer.compare(replayed, finalRow.bytes) !== 0) {
+    await sql`update lineages set flagged = true where id = ${pick.lineage_id}`;
+    await sql`
+      insert into result_rejections (result_id, reason, detail)
+      values (${pick.result_id}, 'challenge_failed',
+              ${sql.json({ slash: true, slow_lane: true, detail: "full replay diverged from accepted chain" } as never)})
+      on conflict (result_id) do nothing`;
+    events.emit("lineage_flagged", { job_id: pick.job_id, lineage_id: pick.lineage_id });
+    console.warn(`[slow-lane] accepted chunk ${pick.chunk_id} FAILED full replay — lineage ${pick.lineage_id} flagged`);
+    return 1;
+  }
+  return 0;
 }
 
 /** Fail deliveries that never arrived: awaiting_outputs older than the

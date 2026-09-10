@@ -148,6 +148,57 @@ async function run(): Promise<void> {
     });
   }
 
+  if (mod.verificationMode === "training") {
+    // The invariants training verification relies on: (a) the origin is a
+    // pure function of the lineage seed, (b) advance_bucket is deterministic
+    // (the honest chain is unique), (c) the witness re-evaluates exactly.
+    // Gate runs a SHORT bucket (gens_per_bucket=8) — determinism at 8
+    // generations is determinism; full-length cost is bounded separately.
+    if (!supportsCandidates) {
+      return void parentPort!.postMessage({ ok: false, reason: "training modules must export evaluate_candidate (the witness primitive)" });
+    }
+    let gateParams: Record<string, unknown>;
+    try { gateParams = { ...(JSON.parse(paramsJson) as Record<string, unknown>), gens_per_bucket: 8 }; }
+    catch { gateParams = { gens_per_bucket: 8 }; }
+    const gp = JSON.stringify(gateParams);
+    const seed = Uint8Array.from({ length: 32 }, (_, i) => (i * 41 + 5) & 0xff);
+    try {
+      const s0a = mod.initState(seed, gp);
+      const s0b = mod.initState(seed, gp);
+      if (Buffer.compare(Buffer.from(s0a), Buffer.from(s0b)) !== 0) {
+        return void parentPort!.postMessage({ ok: false, reason: "init_state is non-deterministic for a fixed seed" });
+      }
+      const t0 = Date.now();
+      const s1a = mod.advanceBucket(s0a, gp);
+      const bucketMs = Date.now() - t0;
+      const s1b = mod.advanceBucket(s0b, gp);
+      if (Buffer.compare(Buffer.from(s1a), Buffer.from(s1b)) !== 0) {
+        return void parentPort!.postMessage({ ok: false, reason: "advance_bucket is non-deterministic — the honest chain must be unique" });
+      }
+      // Extrapolated full-bucket bound: 8 gens measured → 256 gens must fit
+      // the challenge thread's 8s timeout with margin.
+      if (bucketMs * 32 > 6000) {
+        return void parentPort!.postMessage({ ok: false, reason: `advance_bucket too slow (~${bucketMs * 32}ms extrapolated for 256 generations; limit 6000ms)` });
+      }
+      const w = mod.bestOfState(s1a, gp);
+      const score = new DataView(w.buffer, w.byteOffset).getBigInt64(0, true);
+      const genome = w.slice(8);
+      const re = mod.evaluateCandidate(genome, gp);
+      if (re !== score) {
+        return void parentPort!.postMessage({ ok: false, reason: `witness invariant broken: best_of_state says ${score}, evaluate_candidate says ${re}` });
+      }
+    } catch (e) {
+      return void parentPort!.postMessage({ ok: false, reason: `training gate failed: ${(e as Error).message}` });
+    }
+    return void parentPort!.postMessage({
+      ok: true,
+      verification_mode: "training",
+      supports_candidates: true,
+      spec_version: specVersion,
+      buckets_checked: 2,
+    });
+  }
+
   return void parentPort!.postMessage({
     ok: false,
     reason: `verification_mode '${mod.verificationMode}' is not accepted yet`,

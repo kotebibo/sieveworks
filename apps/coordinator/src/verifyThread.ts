@@ -12,7 +12,7 @@ import { registry } from "./moduleRegistry.js";
 
 interface BucketJob {
   id: number;
-  op?: "extremum" | "render" | "candidate" | "advance"; // absent = extremum (pre-mode messages)
+  op?: "extremum" | "render" | "candidate" | "advance" | "advanceState" | "initState"; // absent = extremum
   hash: string;
   rangeStart: string;
   rangeEnd: string;
@@ -26,6 +26,18 @@ parentPort!.postMessage({ type: "ready" });
 parentPort!.on("message", async (job: BucketJob) => {
   try {
     const mod = await registry.get(job.hash);
+    if (job.op === "initState") {
+      const seed = new Uint8Array(Buffer.from(job.candidateB64 ?? "", "hex"));
+      const st = mod.initState(seed, job.paramsJson);
+      parentPort!.postMessage({ type: "result", id: job.id, digestHex: Buffer.from(st).toString("base64") });
+      return;
+    }
+    if (job.op === "advanceState") {
+      const state = new Uint8Array(Buffer.from(job.candidateB64 ?? "", "base64"));
+      const advanced = mod.advanceBucket(state, job.paramsJson);
+      parentPort!.postMessage({ type: "result", id: job.id, digestHex: Buffer.from(advanced).toString("base64") });
+      return;
+    }
     if (job.op === "advance") {
       const state = new Uint8Array(Buffer.from(job.candidateB64 ?? "", "base64"));
       const advanced = mod.advanceBucket(state, job.paramsJson);

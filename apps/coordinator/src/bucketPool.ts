@@ -99,6 +99,18 @@ export class BucketPool {
     return r.digestHex!;
   }
 
+  /** Slow-lane replay: derive a lineage origin state in the thread. */
+  async initStateB64(hash: string, seedHex: string, paramsJson: string): Promise<string> {
+    const r = await this.dispatch({ op: "initState", hash, rangeStart: "0", rangeEnd: "0", paramsJson, candidateB64: seedHex });
+    return r.digestHex!; // reused field carries the b64 state
+  }
+
+  /** Slow-lane replay: advance one bucket, returning the new state (b64). */
+  async advanceStateB64(hash: string, stateB64: string, paramsJson: string): Promise<string> {
+    const r = await this.dispatch({ op: "advanceState", hash, rangeStart: "0", rangeEnd: "0", paramsJson, candidateB64: stateB64 });
+    return r.digestHex!;
+  }
+
   /** Prize-bounty candidate re-evaluation (one deterministic fitness call). */
   async evaluateCandidate(hash: string, candidateB64: string, paramsJson: string): Promise<bigint> {
     const r = await this.dispatch({ op: "candidate", hash, rangeStart: "0", rangeEnd: "0", paramsJson, candidateB64 });

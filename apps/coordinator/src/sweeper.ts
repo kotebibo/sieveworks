@@ -2,7 +2,7 @@ import { finalizePrizes } from "./candidates.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
-import { expireChallenges, expireDeliveries, type VerifyDeps } from "./verification.js";
+import { expireChallenges, expireDeliveries, slowLaneReaudit, type VerifyDeps } from "./verification.js";
 
 /**
  * Lease reclaim. Postgres lease_expires_at is the truth (spec §7): expired
@@ -11,7 +11,15 @@ import { expireChallenges, expireDeliveries, type VerifyDeps } from "./verificat
  */
 export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Timeout {
   const leases = deps.leases;
+  let tickNo = 0;
   const tick = async (): Promise<void> => {
+    tickNo++;
+    // Slow lane: one full-chunk training replay at most every 6th tick
+    // (~once a minute) — expensive by design, bounded by construction.
+    if (tickNo % 6 === 0) {
+      const caught = await slowLaneReaudit(deps).catch((e) => { console.error("slow-lane:", e); return 0; });
+      if (caught > 0) console.warn("sweeper: slow-lane re-audit caught a diverged chain");
+    }
     const expired = await expireChallenges(deps);
     if (expired > 0) console.log(`sweeper: expired ${expired} unanswered challenge(s)`);
     const undelivered = await expireDeliveries(deps);
