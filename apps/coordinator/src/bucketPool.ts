@@ -91,6 +91,14 @@ export class BucketPool {
     return r.digestHex!;
   }
 
+  /** Training challenge truth: advance one bucket from the provided start
+   * state in the thread; return the job-salted digest of the END state.
+   * The (large) states never enter the main thread. */
+  async advanceBucketDigest(hash: string, stateB64: string, paramsJson: string, salt16Hex: string): Promise<string> {
+    const r = await this.dispatch({ op: "advance", hash, rangeStart: "0", rangeEnd: "0", paramsJson, salt16Hex, candidateB64: stateB64 });
+    return r.digestHex!;
+  }
+
   /** Prize-bounty candidate re-evaluation (one deterministic fitness call). */
   async evaluateCandidate(hash: string, candidateB64: string, paramsJson: string): Promise<bigint> {
     const r = await this.dispatch({ op: "candidate", hash, rangeStart: "0", rangeEnd: "0", paramsJson, candidateB64 });

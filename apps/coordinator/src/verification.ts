@@ -15,6 +15,8 @@ import {
   type SubmissionResponse,
 } from "@sieveworks/protocol";
 import { bucketDigest16 } from "@sieveworks/wasm-runtime";
+import { createHash } from "node:crypto";
+import { candidatePool } from "./candidates.js";
 import type { BucketPool } from "./bucketPool.js";
 import { attestFind, chainEnabled } from "./chain.js";
 import { sql } from "./db.js";
@@ -77,7 +79,79 @@ export async function verifySubmission(
   ctx: SubmissionContext
 ): Promise<SubmissionResponse> {
   if (ctx.mode === "output_hash") return verifyOutputHash(deps, resultId, sub, ctx);
+  if (ctx.mode === "training") return verifyTraining(deps, resultId, sub, ctx);
   return verifyExtremum(deps, resultId, sub, ctx);
+}
+
+const TRAINING_AUDIT_RATE_PCT = Number(process.env.TRAINING_AUDIT_RATE_PCT ?? 10);
+
+/** A lineage's generation-0 state is a pure function of (job, lineage) —
+ * both sides derive the same 32-byte seed, so the origin cannot be chosen
+ * by the worker (Spec 03 anchoring). */
+export function lineageSeed32(jobId: string, lineageId: string): Uint8Array {
+  return new Uint8Array(createHash("sha256").update(`sieveworks-lineage:${jobId}:${lineageId}`).digest());
+}
+
+/** Mode 3 (Spec 03): the chunk is a lineage segment. Witness = the best
+ * genome ever seen (O(1) re-evaluation); work-proof = transition challenges
+ * (bucket 0 ALWAYS sampled — the origin anchor). Payment waits on final-
+ * state delivery, which is also what lets the lineage continue. */
+async function verifyTraining(
+  deps: VerifyDeps,
+  resultId: string,
+  sub: ResultSubmission,
+  ctx: SubmissionContext
+): Promise<SubmissionResponse> {
+  if (sub.extremum_score === undefined || sub.best_candidate_b64 === undefined) {
+    await rejectResult(deps, resultId, ctx, "witness_failed", { slash: false, detail: "training submission missing witness fields" });
+    return { result_id: resultId, status: "rejected" };
+  }
+  // 1. WITNESS — the claimed best genome must reproduce the claimed score
+  // (one deterministic evaluation, in the isolated candidate pool).
+  let reeval: bigint;
+  try {
+    reeval = await candidatePool.evaluateCandidate(ctx.specHash, sub.best_candidate_b64, JSON.stringify(ctx.params));
+  } catch {
+    await rejectResult(deps, resultId, ctx, "witness_failed", { slash: true, detail: "witness genome failed evaluation" });
+    return { result_id: resultId, status: "rejected" };
+  }
+  if (reeval !== BigInt(sub.extremum_score)) {
+    await rejectResult(deps, resultId, ctx, "witness_failed", {
+      slash: true,
+      detail: `witness genome scores ${reeval}, claimed ${sub.extremum_score}`,
+    });
+    return { result_id: resultId, status: "rejected" };
+  }
+
+  // 2. CHALLENGE DECISION — no honeypots exist in this mode; the audit rate
+  // is higher to compensate, and bucket 0 is ALWAYS in the sample (origin
+  // anchor: a chain not grown from the forced origin dies here).
+  const [prior] = await sql<{ n: number }[]>`
+    select count(*)::int as n from results
+    where worker_id = ${ctx.workerId} and id != ${resultId}
+      and verification_state = 'passed'`;
+  const challenged = prior!.n < 3 || randomInt(100) < TRAINING_AUDIT_RATE_PCT;
+  if (!challenged) {
+    await awaitOutputs(deps, resultId, ctx);
+    return { result_id: resultId, status: "accepted" };
+  }
+
+  const n = sub.buckets_count;
+  const k = Math.min(n, Math.max(CHALLENGE_BUCKETS, Math.ceil(n / 4)));
+  const picked = new Set<number>([0]);
+  while (picked.size < k) picked.add(randomInt(n));
+  const indices = [...picked].sort((a, b) => a - b);
+  const indicesLiteral = `{${indices.join(",")}}`;
+  await sql`insert into challenges (result_id, bucket_indices)
+            values (${resultId}, ${indicesLiteral}::int[])`;
+  await sql`update results set verification_state = 'challenged' where id = ${resultId}`;
+  await sql`update chunks set state = 'verifying' where id = ${ctx.chunkId}`;
+  events.emit("chunk_challenged", { chunk_id: ctx.chunkId, job_id: ctx.jobId });
+  return {
+    result_id: resultId,
+    status: "challenged",
+    challenge: { result_id: resultId, bucket_indices: indices },
+  };
 }
 
 async function verifyExtremum(
@@ -297,6 +371,52 @@ export async function judgeChallengeResponse(
       }
       continue;
     }
+    if (ctx.mode === "training") {
+      // A challenged bucket is a STATE TRANSITION: resolve the start state,
+      // anchor it (origin derivation for bucket 0, committed prev-leaf digest
+      // otherwise), recompute the transition, compare the end digest.
+      const salt = Buffer.from(jobSalt16Hex(ctx.jobId), "hex");
+      const stateB64 = response.states_b64?.[i];
+      let startState: Uint8Array;
+      if (l.index === 0) {
+        const [chunkRow] = await sql<{ lineage_id: string | null; generation_offset: string | null }[]>`
+          select lineage_id, generation_offset::text from chunks where id = ${ctx.chunkId}`;
+        if (!chunkRow?.lineage_id) return fail("training chunk has no lineage");
+        if (chunkRow.generation_offset === "0" || chunkRow.generation_offset === null) {
+          const mod = await registry.get(ctx.specHash);
+          startState = mod.initState(lineageSeed32(ctx.jobId, chunkRow.lineage_id), paramsJson);
+        } else {
+          const [lin] = await sql<{ latest_state: Buffer | null }[]>`
+            select latest_state from lineages where id = ${chunkRow.lineage_id}`;
+          if (!lin?.latest_state) return fail("lineage has no stored predecessor state");
+          startState = new Uint8Array(lin.latest_state);
+        }
+      } else {
+        if (!stateB64) return fail(`bucket ${l.index}: start state not provided`);
+        startState = new Uint8Array(Buffer.from(stateB64, "base64"));
+        // The provided state must be the one COMMITTED at leaf index-1.
+        const prev = response.prev_leaves?.[i];
+        const prevProof = response.prev_proofs?.[i];
+        if (!prev || !prevProof) return fail(`bucket ${l.index}: previous leaf not opened`);
+        if (prev.index !== l.index - 1) return fail(`bucket ${l.index}: wrong previous leaf index`);
+        const prevLeaf: BucketLeaf = { index: prev.index, maxScore: BigInt(prev.max_score), maxSeed: BigInt(prev.max_seed) };
+        if (!verifyProof(prevLeaf, prevProof.map(fromHex), row.buckets_count, root)) {
+          return fail(`bucket ${l.index}: previous leaf not in committed tree`);
+        }
+        const stateDigest = Buffer.from(bucketDigest16(new Uint8Array(salt), startState)).toString("hex");
+        const committedPrev = Buffer.from(wireToDigest16({ score: prev.max_score, seed: prev.max_seed })).toString("hex");
+        if (stateDigest !== committedPrev) {
+          return fail(`bucket ${l.index}: provided start state does not match the committed chain`);
+        }
+      }
+      const advancedHex = await deps.bucketPool.advanceBucketDigest(
+        ctx.specHash, Buffer.from(startState).toString("base64"), paramsJson, jobSalt16Hex(ctx.jobId));
+      const committedHex = Buffer.from(wireToDigest16({ score: l.max_score, seed: l.max_seed })).toString("hex");
+      if (advancedHex !== committedHex) {
+        return fail(`bucket ${l.index}: transition recompute diverges from the committed chain`);
+      }
+      continue;
+    }
     const truth = await deps.bucketPool.evaluateBucket(ctx.specHash, bStart, bEnd, paramsJson);
     if (truth.maxScore !== leaf.maxScore || truth.maxSeed !== leaf.maxSeed) {
       return fail(
@@ -307,7 +427,7 @@ export async function judgeChallengeResponse(
 
   await sql`update challenges set passed = true where id = ${row.challenge_id}`;
 
-  if (ctx.mode === "output_hash") {
+  if (ctx.mode === "output_hash" || ctx.mode === "training") {
     // Verification passed; payment still waits on delivery.
     await awaitOutputs(deps, row.result_id, ctx);
     return "accepted";
@@ -384,6 +504,97 @@ export async function deliverOutputs(
                   updated_at = now()`;
   events.emit("chunk_accepted", { chunk_id: row.chunk_id, job_id: row.job_id });
   events.emit("outputs_delivered", { chunk_id: row.chunk_id, job_id: row.job_id, result_id: resultId });
+  await maybeCompleteJob(row.job_id);
+  return { ok: true };
+}
+
+/** Training delivery (Spec 03): the worker hands over the FINAL STATE,
+ * proven against the commitment (last leaf inclusion + salted digest).
+ * Only then: earnings credit, lineage update, and the ROLLING creation of
+ * the successor chunk — inserted BEFORE the completion check so a lineage
+ * between chunks can never read as "done". */
+export async function deliverTrainingState(
+  deps: VerifyDeps,
+  resultId: string,
+  stateB64: string,
+  lastLeaf: { index: number; max_score: string; max_seed: string },
+  proofHex: string[]
+): Promise<{ ok: true } | { ok: false; error: string; code: number }> {
+  const [row] = await sql`
+    select r.id as result_id, r.merkle_root, r.buckets_count, r.worker_id,
+           c.id as chunk_id, c.state as chunk_state, c.range_start::text, c.range_end::text,
+           c.lineage_id, c.generation_offset::text,
+           j.id as job_id, j.price_per_chunk_lamports::text, j.verification_mode,
+           j.chunk_size::text, j.search_space_end::text, j.params, j.worker_spec_hash
+    from results r
+    join chunks c on c.id = r.chunk_id
+    join jobs j on j.id = c.job_id
+    where r.id = ${resultId}`;
+  if (!row) return { ok: false, error: "unknown result", code: 404 };
+  if (row.verification_mode !== "training") return { ok: false, error: "job takes no state delivery", code: 409 };
+  if (row.chunk_state !== "awaiting_outputs") return { ok: false, error: "chunk not awaiting outputs", code: 409 };
+  if (!row.lineage_id) return { ok: false, error: "chunk has no lineage", code: 409 };
+  if (lastLeaf.index !== row.buckets_count - 1) {
+    return { ok: false, error: "delivered leaf must be the final bucket", code: 422 };
+  }
+
+  const root = fromHex(row.merkle_root);
+  const leaf: BucketLeaf = { index: lastLeaf.index, maxScore: BigInt(lastLeaf.max_score), maxSeed: BigInt(lastLeaf.max_seed) };
+  if (!verifyProof(leaf, proofHex.map(fromHex), row.buckets_count, root)) {
+    return { ok: false, error: "final leaf not in committed tree", code: 422 };
+  }
+  const state = new Uint8Array(Buffer.from(stateB64, "base64"));
+  const salt = Buffer.from(jobSalt16Hex(row.job_id), "hex");
+  const stateDigest = Buffer.from(bucketDigest16(new Uint8Array(salt), state)).toString("hex");
+  const committed = Buffer.from(wireToDigest16({ score: lastLeaf.max_score, seed: lastLeaf.max_seed })).toString("hex");
+  if (stateDigest !== committed) {
+    return { ok: false, error: "state does not match the committed final leaf", code: 422 };
+  }
+
+  // Lineage bookkeeping: the state carries the lineage's best-ever.
+  const mod = await registry.get(row.worker_spec_hash);
+  const witness = mod.bestOfState(state, JSON.stringify(row.params));
+  const bestScore = new DataView(witness.buffer, witness.byteOffset).getBigInt64(0, true);
+  const bestGenome = Buffer.from(witness.slice(8));
+
+  const G = BigInt(row.chunk_size);
+  const gensDone = BigInt(row.generation_offset ?? "0") + G;
+  await sql`
+    update lineages set latest_state = ${Buffer.from(state)},
+      generations_done = ${gensDone.toString()},
+      best_score = ${bestScore.toString()}, best_genome = ${bestGenome},
+      updated_at = now()
+    where id = ${row.lineage_id}`;
+
+  // ROLL the successor before anything can run the completion check. The
+  // lineage's slice of the range is [idx*perLineage, (idx+1)*perLineage);
+  // this chunk ends at range_end — the next starts there if room remains.
+  const M = Math.max(1, Number((row.params as { lineages?: unknown }).lineages ?? 1));
+  const perLineage = BigInt(row.search_space_end) / BigInt(M);
+  const nextStart = BigInt(row.range_end);
+  const lineageEnd = (BigInt(row.range_start) / perLineage + 1n) * perLineage;
+  if (nextStart < lineageEnd) {
+    await sql`
+      insert into chunks (job_id, range_start, range_end, lineage_id, generation_offset)
+      values (${row.job_id}, ${nextStart.toString()}, ${(nextStart + G).toString()},
+              ${row.lineage_id}, ${gensDone.toString()})
+      on conflict (job_id, range_start) do nothing`;
+  }
+
+  await sql`update chunks set state = 'accepted' where id = ${row.chunk_id}`;
+  await sql`
+    insert into earnings (worker_id, job_id, cumulative_lamports)
+    values (${row.worker_id}, ${row.job_id}, ${row.price_per_chunk_lamports})
+    on conflict (worker_id, job_id)
+    do update set cumulative_lamports = earnings.cumulative_lamports + ${row.price_per_chunk_lamports},
+                  updated_at = now()`;
+  events.emit("chunk_accepted", { chunk_id: row.chunk_id, job_id: row.job_id });
+  events.emit("lineage_advanced", {
+    job_id: row.job_id,
+    lineage_id: row.lineage_id,
+    generations_done: gensDone.toString(),
+    best_score: bestScore.toString(),
+  });
   await maybeCompleteJob(row.job_id);
   return { ok: true };
 }

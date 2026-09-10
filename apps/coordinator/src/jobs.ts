@@ -33,7 +33,7 @@ export const CreateJobRequest = z.object({
   lease_ttl_seconds: z.number().int().min(30).max(3600).default(180),
   // Prize bounties (Spec 02): winner-takes-prize for the best verified
   // candidate above threshold_score by deadline_at. No chunks/leases.
-  bounty_kind: z.enum(["coverage", "prize"]).default("coverage"),
+  bounty_kind: z.enum(["coverage", "prize", "training"]).default("coverage"),
   prize_lamports: z.coerce.bigint().positive().optional(),
   threshold_score: z.coerce.bigint().optional(),
   deadline_at: z.iso.datetime({ offset: true }).optional(),
@@ -96,12 +96,16 @@ export async function createJob(
   // coverage pricing rules below, which would reject the prize shape
   // (budget > 0 with price 0) outright.
   if (req.bounty_kind === "prize") return createPrizeJob(req, creatorWallet);
+  if (req.bounty_kind === "training") return createTrainingJob(req, creatorWallet);
 
   const workerSpecHash = req.worker_spec_hash;
   // A candidate-only module (prize bounties) cannot enumerate ranges.
   const coverageMod = await registry.get(workerSpecHash);
   if (coverageMod.verificationMode === "witness_extremum" && !coverageMod.supportsExtremum) {
     throw new Error("module supports prize bounties only (no range ABI) — use bounty_kind: prize");
+  }
+  if (coverageMod.verificationMode === "training") {
+    throw new Error("training modules take bounty_kind: training (or prize), not coverage");
   }
   const start = BigInt(req.search_space_start);
   const end = BigInt(req.search_space_end);
@@ -236,4 +240,84 @@ async function createPrizeJob(
   await sql`update jobs set params = params || ${sql.json({ prize_salt: prizeSalt } as never)} where id = ${jobId}`;
 
   return { jobId, chunkSize: 0n, chunkCount: 0, honeypots: 0, status };
+}
+
+// Training-mode constants (benchmarked 2026-09-11, Spec 03 §5): a bucket is
+// B generations (~1.9s worst-case recompute), a chunk is 32 buckets (~60s
+// of worker compute). Both ride the existing range machinery: lineage L's
+// chunk at generation offset O covers range [L*perLineage+O, ...+G).
+const TRAIN_B = 256;
+const TRAIN_G = TRAIN_B * 32;
+
+/** Training bounty: M parallel lineages (island model), rolling chunks —
+ * each accepted+delivered chunk spawns its successor from the delivered
+ * final state. Pricing follows coverage rules (budget = price x total
+ * chunks); honeypots don't exist in this mode (audit rate compensates). */
+async function createTrainingJob(
+  req: CreateJobRequest,
+  creatorWallet: string
+): Promise<{ jobId: string; chunkSize: bigint; chunkCount: number; honeypots: number; status: string }> {
+  const mod = await registry.get(req.worker_spec_hash);
+  if (mod.verificationMode !== "training") throw new Error("module does not declare verification_mode: training");
+
+  const perLineage = BigInt(req.search_space_end); // generations per lineage
+  if (BigInt(req.search_space_start) !== 0n) throw new Error("training ranges start at 0");
+  if (perLineage < BigInt(TRAIN_G) || perLineage % BigInt(TRAIN_G) !== 0n || perLineage > 1_048_576n) {
+    throw new Error(`generations per lineage must be a multiple of ${TRAIN_G}, at most 1048576`);
+  }
+  const lineagesRaw = Number((req.params as { lineages?: unknown }).lineages ?? 32);
+  const M = Math.min(256, Math.max(1, Math.floor(lineagesRaw) || 32));
+  const chunksPerLineage = Number(perLineage / BigInt(TRAIN_G));
+  const chunkCount = chunksPerLineage * M;
+  if (chunkCount > MAX_CHUNKS_PER_JOB) throw new Error(`training plan needs ${chunkCount} chunks (max ${MAX_CHUNKS_PER_JOB})`);
+
+  const price = req.price_per_chunk_lamports;
+  const budget = req.budget_lamports;
+  if (price > 0n) {
+    if (price < MIN_PRICE_LAMPORTS) throw new Error(`price per chunk must be >= ${MIN_PRICE_LAMPORTS} lamports`);
+    if (budget < price * BigInt(chunkCount)) {
+      throw new Error(`budget must cover price x total chunks (${price} x ${chunkCount})`);
+    }
+  } else if (budget > 0n) {
+    throw new Error("a budget requires a price per chunk");
+  }
+  const status = price > 0n ? "draft" : "open";
+
+  const [creator] = await sql<{ id: string }[]>`
+    insert into users (wallet_address) values (${creatorWallet})
+    on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
+    returning id`;
+
+  const [job] = await sql<{ id: string }[]>`
+    insert into jobs (creator_id, title, description, game, worker_spec_hash, version_pin,
+                      params, search_space_start, search_space_end, chunk_size, bucket_size,
+                      budget_lamports, price_per_chunk_lamports, status, lease_ttl_seconds,
+                      verification_mode, bounty_kind)
+    values (${creator!.id}, ${req.title}, ${req.description ?? null}, ${req.game},
+            ${req.worker_spec_hash}, ${req.version_pin}, ${sql.json(req.params as never)},
+            0, ${(BigInt(M) * perLineage).toString()}, ${TRAIN_G}, ${TRAIN_B},
+            ${budget.toString()}, ${price.toString()}, ${status}, ${req.lease_ttl_seconds},
+            'training', 'training')
+    returning id`;
+  const jobId = job!.id;
+
+  // Forced landscape salt + training knobs (overwrite whatever was sent) —
+  // the module reads prize_salt as its course seed for training too.
+  const salt = BigInt("0x" + jobId.replace(/-/g, "").slice(0, 16)).toString();
+  const forced = { prize_salt: salt, gens_per_bucket: TRAIN_B, max_ticks: 3000, lineages: M };
+  await sql`update jobs set params = params || ${sql.json(forced as never)} where id = ${jobId}`;
+
+  // M lineages + their first chunks. Later chunks are created rolling on
+  // delivery (verification.ts) — never up front.
+  for (let i = 0; i < M; i++) {
+    const [lin] = await sql<{ id: string }[]>`
+      insert into lineages (job_id, idx) values (${jobId}, ${i}) returning id`;
+    const rs = (BigInt(i) * perLineage).toString();
+    const re = (BigInt(i) * perLineage + BigInt(TRAIN_G)).toString();
+    await sql`
+      insert into chunks (job_id, range_start, range_end, lineage_id, generation_offset)
+      values (${jobId}, ${rs}, ${re}, ${lin!.id}, 0)`;
+  }
+
+  return { jobId, chunkSize: BigInt(TRAIN_G), chunkCount, honeypots: 0, status };
 }

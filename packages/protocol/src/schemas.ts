@@ -109,6 +109,17 @@ export const ChallengeResponse = z.object({
   result_id: uuid,
   leaves: z.array(ChallengeLeaf).min(1),
   proofs: z.array(z.array(sha256Hex)), // sibling hashes per leaf, leaf→root order
+  // Training mode (Spec 03) only — a challenged bucket k is a STATE
+  // TRANSITION, so the response must also open leaf k-1 (proving what the
+  // committed start digest was) and hand over the start-state blob itself:
+  //   states_b64[i]  = start state of challenged bucket leaves[i].index
+  //   prev_leaves[i] = leaf (index-1), or null for bucket 0 (origin —
+  //                    the coordinator derives it from the chunk spec)
+  // The coordinator checks digest(state) == prev leaf payload (or state ==
+  // derived origin), then advance_bucket(state) digest == leaf payload.
+  states_b64: z.array(z.string().max(200_000)).optional(),
+  prev_leaves: z.array(ChallengeLeaf.nullable()).optional(),
+  prev_proofs: z.array(z.array(sha256Hex).nullable()).optional(),
 });
 export type ChallengeResponse = z.infer<typeof ChallengeResponse>;
 

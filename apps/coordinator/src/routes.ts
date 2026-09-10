@@ -15,7 +15,7 @@ import { events } from "./events.js";
 import { createJob, CreateJobRequest } from "./jobs.js";
 import type { LeaseStore } from "./leases.js";
 import { env } from "./env.js";
-import { deliverOutputs, judgeChallengeResponse, verifySubmission } from "./verification.js";
+import { deliverOutputs, deliverTrainingState, judgeChallengeResponse, verifySubmission } from "./verification.js";
 import { registry } from "./moduleRegistry.js";
 import { runConformanceGate } from "./conformance.js";
 import { authedWallet, completeSignIn, issueNonce, requireAuth } from "./auth.js";
@@ -636,7 +636,9 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     // keeps swarm progress visually contiguous (spec §7).
     const [chunk] = await sql.begin(async (tx) => {
       const [c] = await tx`
-        select id, range_start::text, range_end::text from chunks
+        select id, range_start::text, range_end::text, lineage_id, generation_offset::text,
+               params as chunk_params
+        from chunks
         where job_id = ${job_id} and state = 'pending'
         order by range_start asc
         limit 1
@@ -653,6 +655,16 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
 
     await deps.leases.set(chunk.id as string, nonce, ttl);
 
+    // Training chunks carry lineage context + any per-chunk frozen params
+    // (immigrant) merged over the job params — challenge judging reads the
+    // same frozen values, never live state.
+    const mergedParams = {
+      ...(job.params as Record<string, unknown>),
+      ...((chunk.chunk_params as Record<string, unknown> | null) ?? {}),
+      ...(chunk.lineage_id
+        ? { lineage_id: chunk.lineage_id, generation_offset: chunk.generation_offset ?? "0" }
+        : {}),
+    };
     const assignment = ChunkAssignment.parse({
       chunk_id: chunk.id,
       job_id,
@@ -660,7 +672,7 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       range_start: chunk.range_start,
       range_end: chunk.range_end,
       bucket_size: job.bucket_size,
-      params: job.params,
+      params: mergedParams,
       lease_expires_at: new Date(Date.now() + ttl * 1000).toISOString(),
       nonce,
     });
@@ -725,6 +737,42 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       pricePerChunk: row.price_per_chunk_lamports,
       currentRecordScore: row.current_record_score === null ? null : BigInt(row.current_record_score),
     });
+  });
+
+  // Training progress: per-lineage generations + best fitness (chart feed).
+  app.get("/v1/jobs/:id/lineages", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [job] = await sql<{ bounty_kind: string }[]>`select bounty_kind from jobs where id = ${id}`;
+    if (!job) return reply.code(404).send({ error: "unknown job" });
+    if (job.bounty_kind !== "training") return reply.code(409).send({ error: "not a training bounty" });
+    const rows = await sql`
+      select idx, generations_done::text, best_score::text,
+             encode(best_genome, 'base64') as best_genome_b64, updated_at
+      from lineages where job_id = ${id} order by idx`;
+    return { lineages: rows };
+  });
+
+  // Training continuation: the ACTIVE leaseholder of a chunk with
+  // generation_offset > 0 fetches its origin (the lineage's stored state).
+  app.get("/v1/chunks/:id/origin-state", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { wallet } = req.query as { wallet?: string };
+    const [row] = await sql`
+      select c.state, c.lease_expires_at, c.generation_offset::text, u.wallet_address as holder,
+             l.latest_state
+      from chunks c
+      left join users u on u.id = c.leased_to
+      left join lineages l on l.id = c.lineage_id
+      where c.id = ${id}`;
+    if (!row) return reply.code(404).send({ error: "unknown chunk" });
+    if (row.state !== "leased" || !wallet || row.holder !== wallet) {
+      return reply.code(403).send({ error: "not the active leaseholder" });
+    }
+    if (row.generation_offset === "0" || row.generation_offset === null) {
+      return reply.code(409).send({ error: "origin chunk — derive the state from the lineage seed" });
+    }
+    if (!row.latest_state) return reply.code(409).send({ error: "predecessor state not yet delivered" });
+    return { state_b64: Buffer.from(row.latest_state).toString("base64") };
   });
 
   // ---- delivered outputs (mode 2, public) --------------------------------
@@ -797,7 +845,21 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   // Payment happens here, never at verification (delivery gates payment).
   app.put("/v1/results/:id/outputs", { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = (req.body ?? {}) as { outputs?: string[] };
+    const body = (req.body ?? {}) as {
+      outputs?: string[];
+      state_b64?: string;
+      last_leaf?: { index: number; max_score: string; max_seed: string };
+      proof?: string[];
+    };
+    // Training delivery: ONE final-state blob proven against the last leaf.
+    if (typeof body.state_b64 === "string") {
+      if (!body.last_leaf || !Array.isArray(body.proof)) {
+        return reply.code(400).send({ error: "state_b64 requires last_leaf and proof" });
+      }
+      const v = await deliverTrainingState(deps, id, body.state_b64, body.last_leaf, body.proof);
+      if (!v.ok) return reply.code(v.code).send({ error: v.error });
+      return { ok: true, result_id: id };
+    }
     if (!Array.isArray(body.outputs) || body.outputs.length === 0 || body.outputs.length > 4096) {
       return reply.code(400).send({ error: "outputs: base64[] (bucket order) required" });
     }
