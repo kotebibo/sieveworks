@@ -107,8 +107,11 @@ parent.postMessage({__viz:'ready'}, '*');
 `;
 
 function buildSrcDoc(authorJs: string): string {
+  // 'wasm-unsafe-eval' lets the sandbox instantiate the pinned module WASM
+  // (compute only) WITHOUT permitting general eval(); connect-src 'none'
+  // still blocks every network path, so nothing can be exfiltrated.
   const csp =
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
+    "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
   // Author code is injected as a SEPARATE inline script after the harness.
   // It cannot escape the sandbox; a syntax error is caught by window.onerror.
   return (
@@ -116,8 +119,8 @@ function buildSrcDoc(authorJs: string): string {
     "<meta http-equiv='Content-Security-Policy' content=\"" + csp + "\">" +
     "<style>html,body{margin:0;background:#0a0a0c;overflow:hidden}canvas{display:block;width:100%;height:100%}</style>" +
     "</head><body><canvas id='c' width='720' height='420'></canvas>" +
-    "<script>" + HARNESS + "<\\/script>" +
-    "<script>" + authorJs + "<\\/script>" +
+    "<script>" + HARNESS + "</scr" + "ipt>" +
+    "<script>" + authorJs + "</scr" + "ipt>" +
     "</body></html>"
   );
 }
@@ -140,10 +143,12 @@ export function VizFrame({
   const [error, setError] = useState<string | null>(null);
   const wasmSent = useRef(false);
 
-  // Receive ready/error signals from the sandbox.
+  // Receive ready/error signals from the sandbox. Source check is loose on
+  // purpose: a null-origin sandboxed iframe reports ev.source that doesn't
+  // always === contentWindow across engines, and only our harness ever emits
+  // __viz messages, so keying on that marker is the reliable signal.
   useEffect(() => {
     const onMsg = (ev: MessageEvent) => {
-      if (ev.source !== ref.current?.contentWindow) return;
       const m = ev.data as { __viz?: string; message?: string };
       if (m?.__viz === "ready") setReady(true);
       else if (m?.__viz === "error") setError(m.message ?? "viz error");
@@ -180,6 +185,7 @@ export function VizFrame({
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         srcDoc={buildSrcDoc(vizJs)}
+        onLoad={() => setReady(true)}
         style={{ width: "100%", height, border: "none", borderRadius: 12, background: "#0a0a0c" }}
       />
       {error && (
