@@ -17,7 +17,17 @@ import {
   unstakeIx,
   stakePda,
   decodeWorkerStake,
+  initLineageIx,
+  assertChunkIx,
+  confirmChunkIx,
+  rejectChunkIx,
+  lineagePda,
+  assertionPda,
+  decodeTrainingLineage,
+  decodeChunkAssertion,
   type JobEscrowAccount,
+  type TrainingLineageAccount,
+  type ChunkAssertionAccount,
 } from "@sieveworks/chain";
 import { env } from "./env.js";
 
@@ -197,4 +207,86 @@ export async function slashStake(jobUuid: string, worker: string, amountLamports
     console.error(`[chain] slash failed for ${worker}:`, err);
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Training fraud-proof rail (Spec 03b, Tier 1). The coordinator (holding the
+// authority key) drives all four instructions. assert/confirm/reject THROW on
+// failure so the caller can react per-chunk; fetch* return null when absent.
+// ---------------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Seed a lineage's on-chain origin anchor (once per lineage at funding).
+ * Fire-safe: idempotent-ish (a second init fails cleanly if it already exists),
+ * so it logs and returns null rather than throwing into job creation. */
+export async function initLineageChain(jobUuid: string, lineageIdx: number, originDigest: Uint8Array): Promise<string | null> {
+  init();
+  if (!connection || !authority) return null;
+  try {
+    const ix = initLineageIx({ jobUuid, lineageIdx, originDigest, coordinator: authority.publicKey });
+    const tx = new Transaction().add(ix);
+    return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
+  } catch (err) {
+    console.error(`[chain] init_lineage failed (${jobUuid}#${lineageIdx}):`, err);
+    return null;
+  }
+}
+
+/** Assert a delivered chunk on-chain (enters the challenge window). Throws on
+ * failure — the caller decides whether the chunk can proceed. */
+export async function assertChunkChain(args: {
+  jobUuid: string; lineageIdx: number; genStart: bigint; asserter: string;
+  merkleRoot: Uint8Array; dStart: Uint8Array; dEnd: Uint8Array; nBuckets: number; windowSlots: bigint;
+}): Promise<string> {
+  init();
+  if (!connection || !authority) throw new Error("chain rail disabled");
+  const ix = assertChunkIx({
+    jobUuid: args.jobUuid, lineageIdx: args.lineageIdx, genStart: args.genStart,
+    asserter: new PublicKey(args.asserter), merkleRoot: args.merkleRoot,
+    dStart: args.dStart, dEnd: args.dEnd, nBuckets: args.nBuckets, windowSlots: args.windowSlots,
+    coordinator: authority.publicKey,
+  });
+  const tx = new Transaction().add(ix);
+  return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
+}
+
+/** Confirm a chunk after its window (advances the lineage anchor). Throws on
+ * failure (e.g. WindowNotElapsed) so the sweep can retry later. */
+export async function confirmChunkChain(jobUuid: string, lineageIdx: number, genStart: bigint): Promise<string> {
+  init();
+  if (!connection || !authority) throw new Error("chain rail disabled");
+  const ix = confirmChunkIx({ jobUuid, lineageIdx, genStart, coordinator: authority.publicKey });
+  const tx = new Transaction().add(ix);
+  return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
+}
+
+/** Reject a proven-fabricated chunk, recording the fraud transcript on-chain. */
+export async function rejectChunkChain(args: {
+  jobUuid: string; lineageIdx: number; genStart: bigint; badIndex: number;
+  providedStartDigest: Uint8Array; claimedTrueDigest: Uint8Array;
+}): Promise<string> {
+  init();
+  if (!connection || !authority) throw new Error("chain rail disabled");
+  const ix = rejectChunkIx({ ...args, coordinator: authority.publicKey });
+  const tx = new Transaction().add(ix);
+  return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
+}
+
+export async function fetchLineageAnchor(jobUuid: string, lineageIdx: number): Promise<TrainingLineageAccount | null> {
+  init();
+  if (!connection || !UUID_RE.test(jobUuid)) return null;
+  try {
+    const acc = await connection.getAccountInfo(lineagePda(uuidToBytes(jobUuid), lineageIdx));
+    return acc ? decodeTrainingLineage(new Uint8Array(acc.data)) : null;
+  } catch { return null; }
+}
+
+export async function fetchAssertion(jobUuid: string, lineageIdx: number, genStart: bigint): Promise<ChunkAssertionAccount | null> {
+  init();
+  if (!connection || !UUID_RE.test(jobUuid)) return null;
+  try {
+    const acc = await connection.getAccountInfo(assertionPda(uuidToBytes(jobUuid), lineageIdx, genStart));
+    return acc ? decodeChunkAssertion(new Uint8Array(acc.data)) : null;
+  } catch { return null; }
 }
