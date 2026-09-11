@@ -775,6 +775,12 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
       select bytes from chunk_outputs where result_id = ${row.result_id} and bucket_index = ${row.buckets_count}`;
     const delivered = finRow ? new Uint8Array(finRow.bytes) : null;
     const matches = !!(replayed && delivered && Buffer.compare(Buffer.from(replayed.final), Buffer.from(delivered)) === 0);
+    {
+      const dsalt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
+      console.log(`[fp-debug] chunk=${row.chunk_id} buckets=${row.buckets_count} params=${JSON.stringify(row.params)} ` +
+        `replay=${replayed ? Buffer.from(bucketDigest16(dsalt, replayed.final)).toString("hex") : "null"} ` +
+        `delivered=${delivered ? Buffer.from(bucketDigest16(dsalt, delivered)).toString("hex") : "null"} match=${matches}`);
+    }
 
     if (matches) {
       try {

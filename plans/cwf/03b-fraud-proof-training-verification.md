@@ -353,3 +353,82 @@ third-party challenging (rewards deferred, bond-split forward-compatible); short
 (minutes) coordinator-driven window; SOL-denominated bonds sized from full-chunk
 re-exec cost. Remaining calibration (exact window seconds, exact bond
 multiplier) is a build-time measurement, not a design decision.
+
+---
+
+## BUILD LOG — Tier 1 built + deployed; E2E surfaced a determinism blocker (Sep 11)
+
+DONE + on devnet: full on-chain scaffold (TrainingLineage/ChunkAssertion PDAs;
+init_lineage/assert_chunk/confirm_chunk/reject_chunk), chain builders/decoders,
+coordinator wiring behind `TRAINING_FRAUD_PROOF` (default OFF), confirmation
+sweep, migration (`awaiting_confirm`). Verified: on-chain dispatch + auth gate;
+delivery-fork asserts + parks; sweep re-runs + confirms/rejects; window-gating.
+
+**BLOCKER found by the honest-path E2E — training re-execution is
+NON-DETERMINISTIC across runs:**
+- Honest worker delivered final state digest `e2f6a951…` (job b81ba791) and
+  `801ad338…` (job c95d269e); independent local replay of the SAME lineage
+  (same seed, same params, same WASM) gives `f986e92d…` / `da4616d4…`.
+- Ruled out: params (job vs merged → identical init+advance); artifact drift
+  (served bytes sha256 == registered af4a exactly); in-process nondeterminism
+  (A==B stable within a process); floats (module is all integer, in-state
+  counter RNG, pure-looking C).
+- Divergence starts at state byte 32 (the header's best-genome slot; EVO_HDR
+  =168, EVO_POP=64) — i.e. the EVOLVED POPULATION differs, while rng_counter/
+  generation/best_score (bytes 0-31) match. Same number of RNG draws, different
+  genomes.
+- Prime remaining suspect: the `@sieveworks/wasm-runtime` harness
+  (advanceBucket/initState) returning a VIEW into WASM memory or reusing an
+  output buffer, so a chained replay corrupts — which would also make the
+  EXISTING slow-lane false-flag honest chunks, and means the training CHALLENGE
+  "passing" is not actually catching this.
+- Impact: re-execution verification (fraud-proof confirm AND slow-lane) cannot
+  be trusted until this is fixed. Flag left OFF; prod on the probabilistic path.
+
+**NEXT (fresh session):** instrument wasm-runtime advanceBucket — check
+copy-vs-view + buffer reuse; run the worker's exact in-memory compute and diff
+against its own DB-delivered bytes (isolates worker-self vs replay); then re-run
+the E2E. The fraud-proof machinery itself is correct and stays as-is.
+
+---
+
+## CORRECTION (Sep 11, later) — module IS deterministic; bug is in the sweep
+
+The "determinism blocker" above was a **false alarm caused by my test harness**,
+not a real module bug. Root cause found:
+
+- `createTrainingJob` injects a random per-job `prize_salt` (e.g.
+  `14509796035751595082`, stored as a STRING in `jobs.params` since it exceeds
+  2^53) plus `max_ticks`/`gens_per_bucket`. The module's fitness depends on
+  `prize_salt`.
+- My manual replay used `{lineages:1}` → default salt 42 → a different (but
+  internally consistent) chain → `f986…`/`da4616…`. The worker used the real
+  salt → `e2f6…`/`801ad3…`.
+- **PROOF the module is deterministic + correct:** replaying locally with the
+  REAL job params reproduces the worker's delivered final EXACTLY
+  (`801ad338…` == worker `801ad338…`). Same seed + real params + same WASM →
+  identical result. No module non-determinism. The challenge passing was
+  legitimate all along.
+
+So re-execution verification IS sound. The REAL remaining bugs are coordinator-
+side, in the NEW sweep code (both fixable, flag OFF until then):
+
+1. **Sweep replay rejects honest chunks.** `confirmTrainingChunks` →
+   `replayTrainingChunk` uses `JSON.stringify(row.params)` where `row.params` =
+   `j.params` (which DOES contain `prize_salt`), so it *should* match — yet it
+   rejects. A `[fp-debug]` log was added to print the replay's params + digests,
+   but the remote Docker build served a STALE image (the log never appeared), so
+   the exact params the sweep uses are still unconfirmed. NEXT: deploy with
+   `--no-cache` (or bump a file) to land the debug log, read the params the
+   worker thread actually receives, and fix whatever drops `prize_salt` on the
+   replay path (suspect: bucketPool dispatch / worker-thread param handling, or
+   the confirm query).
+2. **Reject-retry storm / stuck state.** When `reject_chunk` lands once
+   (status→2) but the DB chunk isn't marked `rejected`, later ticks re-process
+   it and the on-chain reject fails with `AssertionNotOpen`, looping. FIX: mark
+   the chunk `rejected` in the DB even when the on-chain reject is a no-op/fails
+   (treat AssertionNotOpen-after-resolved as success), and reconcile status==2
+   BEFORE attempting a fresh reject.
+
+Prod: flag OFF, training on the probabilistic path. Module + on-chain scaffold
+are correct; only the sweep's param-plumbing + reject-state need fixing.
