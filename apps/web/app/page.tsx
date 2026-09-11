@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchFinds, fetchJobResults, fetchSpecs, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats, type WorkerSpec } from "@/lib/api";
 import { Wordmark } from "@/components/Wordmark";
 import { Sieve } from "@/components/Sieve";
+import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { CountUp, Mono, fmt } from "@/components/ui";
 
 export default function Home() {
@@ -115,7 +116,7 @@ export default function Home() {
           <HeroStat n={stats ? Number(stats.chunks_accepted) : 0} l="Chunks verified" />
           <HeroStat n={stats ? Number(stats.contributors) : 0} l="Contributors" />
           <HeroStat n={stats ? Number(stats.seeds_evaluated) : 0} l="Seeds total" />
-          <HeroStat v="0.45%" l="Verify overhead" accent />
+          <HeroStat v="0.9%" l="Verify overhead" accent />
         </div>
       </section>
 
@@ -162,6 +163,27 @@ export default function Home() {
             </p>
           </div>
         </div>
+      </section>
+
+      {/* ---------- living demo: evolution ---------- */}
+      <section className="pt-24">
+        <div className="max-w-[62ch] mb-8">
+          <h2 className="font-display font-bold text-[clamp(26px,3.2vw,36px)] leading-[1.06] tracking-[-0.028em]">
+            Not just search. Anything you can score.
+          </h2>
+          <p className="mt-3.5 text-[16px] text-[var(--text-dim)]">
+            The same verify-don't-trust rails run any deterministic workload. Below, a
+            neuroevolution module is training <em>live in this tab</em> — the exact
+            init → advance → best-of loop a paid worker runs — learning to fly a course it
+            has never seen. Watch the champion clear more pipes each generation.
+          </p>
+        </div>
+        <FlappyShowcase />
+        <p className="num mt-3.5 text-[12.5px] text-[var(--text-faint)]">
+          Running on your CPU right now · paid workers do this per generation, checkpointed and
+          verified ·{" "}
+          <Link href="/bounties" className="hover:text-[var(--accent)] underline">see training bounties →</Link>
+        </p>
       </section>
 
       {/* ---------- lifecycle ---------- */}

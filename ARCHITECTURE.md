@@ -96,8 +96,14 @@ must stay near zero (a zkVM would tax every worker 10³–10⁶×). The on-chain
 scaffold is live on devnet: a `TrainingLineage` PDA anchors each lineage as a
 hash chain rooted at `init_state`; `assert_chunk` enforces that a chunk
 continues the real confirmed chain; `confirm_chunk` advances the anchor only
-after a challenge window (window-gated finality = prevention, not just
-detection); `reject_chunk` records a public, re-computable fraud transcript.
+after a challenge window (in Tier 1 the coordinator enforces the window; the
+chain stores but does not floor it) — window-gating turns detection into
+prevention *given the coordinator runs the re-check*. `reject_chunk` records a
+fraud transcript that is, in **Tier 1, the coordinator's attestation** (16-byte
+digests only — not recomputable from chain data alone); on-chain recomputation
+of the disputed step arrives with the Tier-2 executor. So training slashing is
+currently coordinator-decided, publicly re-runnable off-chain, not yet
+chain-proven — the same honest caveat the program source carries.
 Full design + status: `plans/cwf/03b-fraud-proof-training-verification.md`.
 
 ---
