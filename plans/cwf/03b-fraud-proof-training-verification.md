@@ -96,33 +96,50 @@ honest party can force an objective, publicly-recomputable verdict.**"
 
 ---
 
-## 4. The commitment (make the trace explicit)
+## 4. The commitment (NO leaf-format change needed — key finding)
 
-Today the leaf is `digest16(Sᵢ₊₁)` for bucket i. For bisection we need the game
-to reference **both endpoints** of every bucket transition. Redefine the leaf as
-the *transition* i:
+The existing Spec-03 commitment is **already transition-aware** — verified by
+reading `apps/coordinator/src/verification.ts:378-421`:
 
-```
-leaf_i = H( i ‖ digest(S_i) ‖ digest(S_{i+1}) )          for i in [0, 256)
-merkle_root = MerkleRoot(leaf_0 … leaf_255)
-```
+- Leaf `i` = `digest(S_{i+1})` (the 16-byte salted digest of bucket i's OUTPUT
+  state), carried as the leaf's `(maxScore, maxSeed)` pair via `wireToDigest16`.
+- A challenged bucket i>0 is verified by opening leaf `i-1` (= `digest(S_i)`),
+  requiring the worker's provided start state to hash to it, then recomputing
+  `advance_bucket(S_i)` and comparing to leaf `i`.
+- Bucket 0 already anchors to the origin: `init_state(lineageSeed)` for the
+  lineage's first chunk, else the stored `latest_state`.
 
-- `S_0` is pinned: it must equal the lineage origin — either
-  `init_state(lineageSeed32(job, lineage))` for the lineage's first chunk, or
-  the *previous confirmed chunk's* `S_256` (origin anchoring, on-chain-bound in
-  §6). The worker also publishes `digest(S_0)` in the assertion; the program
-  checks it equals the anchored origin digest.
-- `digest(S_256)` is the delivered `latest_state` candidate.
-- Data availability: the worker must retain all `S_0…S_256` (256 × state-bytes)
-  to answer bisection queries. Failure to answer within a step timeout =
-  loses by default. This is bounded, small storage.
+So the bisection game can reference BOTH endpoints of any transition `i` without
+a new leaf format: `digest(S_i)` = leaf `i-1` (or the anchored origin for i=0),
+`digest(S_{i+1})` = leaf `i`. "Agree at index k" in the game = agree on leaf
+`k-1` (or the origin). This means **step 1 is not a client-breaking change** —
+the worker/CLI/desktop commitment stays exactly as-is; the game is built on top.
 
-`digest()` is the existing 16-byte salted bucket digest, so state bytes never
-go on-chain; only digests + Merkle openings do.
+- `S_0` pinning is enforced on-chain via the Lineage PDA (§6): the assertion's
+  `digest(S_0)` must equal the anchored `confirmed_state_digest`.
+- `digest(S_256)` (= leaf 255) is the delivered `latest_state` candidate.
+- Data availability: the worker retains `S_0…S_256` (256 × state-bytes) to
+  answer bisection queries; a step-timeout miss = loses by default. Bounded,
+  small storage. This is the ONLY new client obligation, and it is additive.
+
+State bytes never go on-chain; only digests + Merkle openings do.
 
 ---
 
 ## 5. The bisection game (off-chain protocol, on-chain settlement)
+
+> **IMPLEMENTATION NOTE (Tier split).** The interactive bisection below is a
+> **Tier 2** artifact: it exists only so a *cheap* referee can resolve a dispute
+> without re-running the chunk. In **Tier 1** the coordinator is both default
+> challenger and referee and has already re-run the chunk to detect fraud, so it
+> posts the divergent bucket directly (`reject_chunk`) with the transcript
+> on-chain for public recheck — no bisection needed. What makes Tier 1
+> *prevent* (not just detect) poisoning is **window-gated finality**: a chunk's
+> `S₂₅₆` cannot become the next origin until the challenge window closes with no
+> rejection, and the coordinator (and any third party) re-runs within that
+> window. Build Tier 1 first (§7 Tier 1, §12); bisection lands with the on-chain
+> executor in Tier 2.
+
 
 Actors: **Asserter** = the worker who delivered the chunk. **Challenger** =
 anyone (coordinator by default) who re-ran the chunk and disagrees.
@@ -305,11 +322,12 @@ as today's claim/close co-sign.
 
 ## 12. Build breakdown (Tier 1)
 
-1. Redefine the training leaf to the transition form (§4) + update
-   commit/verify in `@sieveworks/wasm-runtime` + coordinator + worker clients.
-   Regression: existing training E2E still passes with the new leaf.
+1. ~~Leaf format change~~ NOT NEEDED (§4 finding): the existing commitment
+   already supports transition bisection. Instead: expose the bisection
+   endpoints in the coordinator's challenge API (open leaf i-1 / origin as the
+   transition start) — mostly a re-use of existing verify code.
 2. `Lineage` PDA + origin-anchor check; migrate `latest_state` writes behind
-   `confirm_chunk`.
+   `confirm_chunk` (window-gated finality).
 3. `Assertion`/`Dispute` PDAs + `assert/open_dispute/bisect/resolve_one_step/
    timeout_resolve/confirm_chunk` instructions; hand-encoded builders in
    `packages/chain`.
