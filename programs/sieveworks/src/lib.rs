@@ -26,10 +26,12 @@ declare_id!("BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf");
 // stake, grab paid work, then instantly pull the bond before an audit lands.
 const UNSTAKE_COOLDOWN_SLOTS: u64 = 9_000;
 
-/// Generations per bucket in the training modules (Spec 03/03b). One bucket is
-/// the atomic transition `advance_bucket`. Used to advance the lineage's
-/// generation counter on confirm.
-const BUCKET_GENERATIONS: u64 = 32;
+/// Generations per bucket in the training modules (Spec 03/03b) = TRAIN_B.
+/// One bucket is the atomic transition `advance_bucket` (256 generations).
+/// confirm_chunk advances the lineage counter by n_buckets × this, so the
+/// on-chain generations_confirmed tracks the DB's chunk_size (32×256 = 8192
+/// per chunk) and the next chunk's gen_start matches the anchor.
+const BUCKET_GENERATIONS: u64 = 256;
 /// Solana's incinerator — lamports sent here are burned by the runtime.
 const INCINERATOR: Pubkey = pubkey!("1nc1nerator11111111111111111111111111111111");
 
