@@ -50,13 +50,17 @@ const secretKey = loadOrCreateSecret();
 const wallet = walletFromSecretKey(secretKey);
 $("wallet").textContent = wallet;
 
-// Which builtin native cores this machine can run, up front.
-invoke<string[]>("core_status")
-  .then((cores) => {
-    $("core").textContent = cores.length ? cores.join(", ") : "no native cores found";
-    if (cores.length) $("core").classList.remove("dim");
-  })
-  .catch((e) => { $("core").textContent = `error — ${e}`; });
+// Which builtin native cores this machine can run + whether the GPU path is
+// active (hashgrind, self-conformed to the native core). Shown up front.
+Promise.all([
+  invoke<string[]>("core_status").catch(() => []),
+  invoke<string | null>("gpu_status").catch(() => null),
+]).then(([cores, gpuBackend]) => {
+  const coreText = cores.length ? cores.join(", ") : "no native cores found";
+  const gpuText = gpuBackend ? ` · GPU: ${gpuBackend} (hash-grind)` : " · GPU: CPU-only";
+  $("core").textContent = coreText + gpuText;
+  if (cores.length) $("core").classList.remove("dim");
+});
 
 // Rust returns snake_case strings; convert to the BucketLeaf bigint shape the
 // merkle package hashes.

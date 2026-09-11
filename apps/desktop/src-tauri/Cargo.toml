@@ -25,6 +25,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# GPU compute path (hash-grind kernel). wgpu = WebGPU/Vulkan/Metal/DX12 behind
+# one WGSL shader; pollster blocks on wgpu's async init; bytemuck for POD casts.
+wgpu = "22"
+pollster = "0.3"
+bytemuck = { version = "1", features = ["derive"] }
 
 [features]
 # this feature is used for production builds or when a dev server is not specified

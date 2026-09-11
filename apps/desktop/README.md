@@ -106,10 +106,26 @@ verified headless — run them yourself:
    installer under `src-tauri/target/release/bundle/`. Code signing (Apple
    notarization / Windows Authenticode) is a separate, credential-gated step.
 
+## GPU path (hash-grind)
+
+`src-tauri/src/gpu.rs` is a **wgpu/WGSL sha256 hash-grind kernel** behind the
+same `eval_range` command — the GPU computes per-seed scores, the CPU does the
+identical per-bucket extremum fold. It activates **only** for the hash-grind
+builtin and **only** if it passes a self-conformance gate: at first use it runs
+the GPU and the native `hashgrind` core on the same sample (both 1-block and
+2-block salt paths) and compares every bucket bit-for-bit. If they diverge — or
+there's no GPU — it silently falls back to the CPU core, so a shader bug can
+never produce a rejectable submission. The UI shows `GPU: <backend>` when it's
+live, else `CPU-only`.
+
+Verify on your machine: run `pnpm --filter @sieveworks/desktop tauri dev`, point
+it at a hash-grind bounty, and watch the Core line — if it reads `gpu:Vulkan`
+(or Metal/Dx12) the self-check passed and the kernel is doing the hashing. The
+one thing that needs a real GPU to confirm is that the self-check *passes* on
+your hardware; the compile + CPU-fallback are verified headless.
+
 ## Next (tracked, not done)
 
-- wgpu/WGSL compute kernel behind the same `eval_range` command (CPU core stays
-  as fallback for GPU-less machines).
 - Bundle the native core as a Tauri sidecar so installs are self-contained.
 - Persist the worker key to the OS keychain instead of webview storage.
 - Real icons (current ones are brand-blue placeholders).
