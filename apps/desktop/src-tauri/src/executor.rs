@@ -28,6 +28,7 @@ pub struct BucketLeaf {
 #[derive(Debug)]
 pub enum ExecError {
     CoreNotFound(PathBuf),
+    UnsupportedModule(String),
     Spawn(String),
     NonZeroExit(i32, String),
     Parse(String),
@@ -37,6 +38,11 @@ impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExecError::CoreNotFound(p) => write!(f, "native core not found at {}", p.display()),
+            ExecError::UnsupportedModule(h) => write!(
+                f,
+                "no native worker for module {} — this module is browser/WASM-only",
+                &h[..h.len().min(12)]
+            ),
             ExecError::Spawn(e) => write!(f, "failed to spawn native core: {e}"),
             ExecError::NonZeroExit(c, e) => write!(f, "native core exited {c}: {e}"),
             ExecError::Parse(e) => write!(f, "could not parse core output: {e}"),
@@ -45,12 +51,56 @@ impl std::fmt::Display for ExecError {
 }
 impl std::error::Error for ExecError {}
 
-/// Resolve the native worker-core binary. Precedence:
-///   1. `$SIEVE_CORE` (explicit override / bundled sidecar path)
-///   2. the monorepo dev build at packages/worker-core/out/native/
-/// Bundling this binary as a Tauri sidecar for shipped installers is a later
-/// step — documented in the app README, not done here.
-pub fn resolve_core() -> Result<PathBuf, ExecError> {
+/// The pinned builtin extremum modules the native worker can run, mapped to
+/// their binary basename. Community/uploaded modules are browser/WASM-only —
+/// the desktop worker only runs these builtins natively. If a builtin is
+/// rebuilt (its content hash changes), update the hash here alongside.
+pub const NATIVE_BINARIES: &[(&str, &str)] = &[
+    // Minecraft seedfinding
+    ("17328b06af18fcba1389b977e7173eaedf2f79a7ef66af707654d4113a32d56f", "sieve_core"),
+    // Hash-grind (proof-of-work) — the GPU-kernel target
+    ("e1e6730bb1abfa8a83237579a2f90394c1b427722505ee31c5b5c916ab0c05a0", "hashgrind"),
+    // Minecraft spawn quality
+    ("114a39bdad6c63440989a956b9fb3173511df11e9c2cc9a4245b5869b409a0ef", "spawn_quality"),
+];
+
+fn binary_for_spec(spec_hash: &str) -> Option<&'static str> {
+    NATIVE_BINARIES.iter().find(|(h, _)| *h == spec_hash).map(|(_, b)| *b)
+}
+
+fn native_dir() -> Option<PathBuf> {
+    let mut root = std::env::current_dir().ok()?;
+    for _ in 0..5 {
+        let dir = root.join("packages").join("worker-core").join("out").join("native");
+        if dir.exists() {
+            return Some(dir);
+        }
+        if !root.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn with_ext(base: &str) -> String {
+    if cfg!(windows) { format!("{base}.exe") } else { base.to_string() }
+}
+
+/// Which builtin native cores are present on this machine (for the UI).
+pub fn available_cores() -> Vec<String> {
+    let Some(dir) = native_dir() else { return vec![] };
+    NATIVE_BINARIES
+        .iter()
+        .filter(|(_, b)| dir.join(with_ext(b)).exists())
+        .map(|(_, b)| (*b).to_string())
+        .collect()
+}
+
+/// Resolve the native binary for a job's module. `$SIEVE_CORE` overrides for
+/// dev; otherwise the module's spec hash selects the pinned builtin binary.
+/// Unknown modules return UnsupportedModule (they must run in the browser).
+/// Bundling these as Tauri sidecars for shipped installers is a later step.
+pub fn resolve_core(spec_hash: &str) -> Result<PathBuf, ExecError> {
     if let Ok(p) = std::env::var("SIEVE_CORE") {
         let pb = PathBuf::from(p);
         if pb.exists() {
@@ -58,41 +108,31 @@ pub fn resolve_core() -> Result<PathBuf, ExecError> {
         }
         return Err(ExecError::CoreNotFound(pb));
     }
-    let exe = if cfg!(windows) { "sieve_core.exe" } else { "sieve_core" };
-    // src-tauri/ -> apps/desktop -> apps -> repo root
-    let mut root = std::env::current_dir().map_err(|e| ExecError::Spawn(e.to_string()))?;
-    // Walk up to 4 levels looking for the packages/ dir, so `cargo run` from
-    // either src-tauri/ or apps/desktop/ resolves the same binary.
-    for _ in 0..5 {
-        let candidate = root
-            .join("packages")
-            .join("worker-core")
-            .join("out")
-            .join("native")
-            .join(exe);
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-        if !root.pop() {
-            break;
-        }
+    let base = binary_for_spec(spec_hash)
+        .ok_or_else(|| ExecError::UnsupportedModule(spec_hash.to_string()))?;
+    let exe = with_ext(base);
+    let dir = native_dir().ok_or_else(|| {
+        ExecError::CoreNotFound(PathBuf::from(format!("packages/worker-core/out/native/{exe}")))
+    })?;
+    let candidate = dir.join(&exe);
+    if candidate.exists() {
+        Ok(candidate)
+    } else {
+        Err(ExecError::CoreNotFound(candidate))
     }
-    Err(ExecError::CoreNotFound(PathBuf::from(format!(
-        "packages/worker-core/out/native/{exe}"
-    ))))
 }
 
-/// Evaluate `[range_start, range_end)` in buckets of `bucket_size`, returning
-/// one leaf per bucket. `params_json` is passed opaquely to the core (the
-/// per-module parameter blob). Same CLI contract as `apps/cli` uses:
-///   sieve_core eval-range <start> <end> <bucket_size> <params_json>
+/// Evaluate `[range_start, range_end)` in buckets of `bucket_size` with the
+/// native binary for `spec_hash`, returning one leaf per bucket. Same CLI
+/// contract as `apps/cli`: `<binary> eval-range <start> <end> <bucket> <json>`.
 pub fn eval_range(
+    spec_hash: &str,
     range_start: &str,
     range_end: &str,
     bucket_size: u64,
     params_json: &str,
 ) -> Result<Vec<BucketLeaf>, ExecError> {
-    let core = resolve_core()?;
+    let core = resolve_core(spec_hash)?;
     let out = Command::new(&core)
         .arg("eval-range")
         .arg(range_start)

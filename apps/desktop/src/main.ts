@@ -50,11 +50,13 @@ const secretKey = loadOrCreateSecret();
 const wallet = walletFromSecretKey(secretKey);
 $("wallet").textContent = wallet;
 
-// Native-core presence check up front, so the UI can say "install the core"
-// rather than failing mid-lease.
-invoke<string>("core_status")
-  .then((path) => { $("core").textContent = path; $("core").classList.remove("dim"); })
-  .catch((e) => { $("core").textContent = `not found — ${e}`; });
+// Which builtin native cores this machine can run, up front.
+invoke<string[]>("core_status")
+  .then((cores) => {
+    $("core").textContent = cores.length ? cores.join(", ") : "no native cores found";
+    if (cores.length) $("core").classList.remove("dim");
+  })
+  .catch((e) => { $("core").textContent = `error — ${e}`; });
 
 // Rust returns snake_case strings; convert to the BucketLeaf bigint shape the
 // merkle package hashes.
@@ -93,12 +95,20 @@ async function workLoop() {
 
     const a = ChunkAssignment.parse(lease.data);
     const cStart = performance.now();
-    const raw = await invoke<{ core_path: string; leaves: RawLeaf[] }>("eval_range", {
-      rangeStart: a.range_start,
-      rangeEnd: a.range_end,
-      bucketSize: Number(a.bucket_size),
-      paramsJson: JSON.stringify(a.params),
-    });
+    let raw: { core_path: string; leaves: RawLeaf[] };
+    try {
+      raw = await invoke<{ core_path: string; leaves: RawLeaf[] }>("eval_range", {
+        specHash: a.worker_spec_hash,
+        rangeStart: a.range_start,
+        rangeEnd: a.range_end,
+        bucketSize: Number(a.bucket_size),
+        paramsJson: JSON.stringify(a.params),
+      });
+    } catch (e) {
+      // e.g. a community/WASM-only module: the native worker can't run it.
+      log(`cannot evaluate this job natively: ${e}`);
+      break;
+    }
     const leaves = toLeaves(raw.leaves);
     const durationMs = Math.round(performance.now() - cStart);
 
