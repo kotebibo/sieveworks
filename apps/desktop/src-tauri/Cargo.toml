@@ -1,0 +1,31 @@
+# Standalone crate: the repo root Cargo.toml is an Anchor/Solana-BPF workspace,
+# and a Tauri desktop app has an entirely different dependency tree. An empty
+# [workspace] table roots this crate on its own so `cargo` never tries to
+# resolve the two together.
+[workspace]
+
+[package]
+name = "sieveworks-desktop"
+version = "0.1.0"
+description = "Sieveworks native worker — runs verifiable compute on your own CPU/GPU"
+authors = ["Sieveworks"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library the Tauri mobile/desktop entrypoints share. Keeps the compute
+# executor (executor.rs) testable without dragging in the whole app.
+[lib]
+name = "sieveworks_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# this feature is used for production builds or when a dev server is not specified
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,53 @@
+/* Daylight Arcade, trimmed for the desktop shell. Mirrors the web tokens so the
+   native worker feels like the same product. Full theming is a later pass. */
+:root {
+  --bg: #f4f7fb;
+  --panel: #ffffff;
+  --border: #dbe4ef;
+  --text: #16324f;
+  --text-dim: #5b7590;
+  --text-faint: #8fa3b8;
+  --brand: #2f79ce;
+  --verified: #1e9e5c;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Nunito", "Inter", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 28px 24px 48px; }
+header h1 { font-size: 24px; margin: 0 0 4px; font-weight: 800; }
+.tag {
+  font-size: 12px; font-weight: 700; color: var(--brand);
+  background: #e7f0fb; border-radius: 999px; padding: 3px 10px; vertical-align: middle;
+}
+.sub { color: var(--text-dim); margin: 0 0 20px; font-size: 14px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px 20px; margin-bottom: 16px;
+}
+.row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.row label { width: 92px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
+.row input {
+  flex: 1; border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; font-size: 14px; background: #fbfdff; color: var(--text);
+}
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+.dim { color: var(--text-faint); }
+.actions { display: flex; gap: 10px; margin-top: 4px; }
+button {
+  border: none; border-radius: 10px; padding: 9px 18px; font-size: 14px; font-weight: 700;
+  cursor: pointer; background: var(--brand); color: #fff;
+}
+button:disabled { opacity: 0.45; cursor: default; }
+#stop { background: #eef3f9; color: var(--text-dim); }
+.stats { font-size: 13px; font-weight: 700; color: var(--verified); margin-bottom: 10px; min-height: 18px; }
+.log {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  background: #0f2438; color: #cfe6ff; border-radius: 10px; padding: 14px;
+  max-height: 320px; overflow-y: auto; margin: 0; white-space: pre-wrap; word-break: break-word;
+}
