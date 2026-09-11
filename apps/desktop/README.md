@@ -103,7 +103,12 @@ verified headless — run them yourself:
 2. **Run it**: `pnpm --filter @sieveworks/desktop tauri dev` — opens the window,
    hot-reloads the frontend. Paste a job id, hit *Start working*.
 3. **Package**: `pnpm --filter @sieveworks/desktop tauri build` — produces an
-   installer under `src-tauri/target/release/bundle/`. Code signing (Apple
+   installer under `src-tauri/target/release/bundle/`. The build first runs
+   `src-tauri/gen-sidecars.mjs`, which copies the native worker-core binaries
+   into `src-tauri/binaries/<name>-<target-triple>` so Tauri bundles them as
+   **sidecars** — the installed app is self-contained (finds its cores next to
+   the app exe; the executor checks there first, dev tree second). Build the
+   worker-core natives first if `binaries/` comes up empty. Code signing (Apple
    notarization / Windows Authenticode) is a separate, credential-gated step.
 
 ## GPU path (hash-grind)

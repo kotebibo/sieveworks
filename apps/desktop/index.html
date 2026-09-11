@@ -8,36 +8,51 @@
   </head>
   <body>
     <main class="wrap">
-      <header>
-        <h1>Sieveworks <span class="tag">native worker</span></h1>
-        <p class="sub">Same protocol as the browser worker — but the compute runs on your machine's CPU (and, soon, GPU).</p>
+      <header class="head">
+        <div class="brand">
+          <span class="logo">◈</span>
+          <div>
+            <h1>Sieveworks <span class="tag">native worker</span></h1>
+            <p class="sub">Same verifiable protocol as the browser — computing on your own hardware.</p>
+          </div>
+        </div>
+        <div class="badges">
+          <span id="gpuBadge" class="badge badge-idle">GPU: …</span>
+          <span id="stateBadge" class="badge badge-idle">idle</span>
+        </div>
       </header>
 
-      <section class="card">
+      <section class="card setup">
         <div class="row">
           <label>Coordinator</label>
           <input id="coordinator" value="https://sieveworks-coordinator.fly.dev" spellcheck="false" />
         </div>
         <div class="row">
           <label>Job ID</label>
-          <input id="job" placeholder="paste a job uuid" spellcheck="false" />
+          <input id="job" placeholder="paste a bounty's job id" spellcheck="false" />
         </div>
-        <div class="row">
+        <div class="row meta">
           <label>Worker</label>
           <span id="wallet" class="mono dim">generating…</span>
         </div>
-        <div class="row">
-          <label>Core</label>
+        <div class="row meta">
+          <label>Cores</label>
           <span id="core" class="mono dim">checking…</span>
         </div>
         <div class="actions">
-          <button id="start">Start working</button>
-          <button id="stop" disabled>Stop</button>
+          <button id="start" class="btn-primary">Start working</button>
+          <button id="stop" class="btn-ghost" disabled>Stop</button>
         </div>
       </section>
 
-      <section class="card">
-        <div id="stats" class="stats"></div>
+      <section class="stats-grid">
+        <div class="stat"><div class="stat-num" id="stChunks">0</div><div class="stat-label">chunks accepted</div></div>
+        <div class="stat"><div class="stat-num" id="stSeeds">0</div><div class="stat-label">seeds evaluated</div></div>
+        <div class="stat"><div class="stat-num" id="stRate">0</div><div class="stat-label">seeds / sec</div></div>
+      </section>
+
+      <section class="card logwrap">
+        <div class="barlabel">activity</div>
         <pre id="log" class="log"></pre>
       </section>
     </main>

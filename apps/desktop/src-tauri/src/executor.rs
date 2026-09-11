@@ -68,30 +68,38 @@ fn binary_for_spec(spec_hash: &str) -> Option<&'static str> {
     NATIVE_BINARIES.iter().find(|(h, _)| *h == spec_hash).map(|(_, b)| *b)
 }
 
-fn native_dir() -> Option<PathBuf> {
-    let mut root = std::env::current_dir().ok()?;
-    for _ in 0..5 {
-        let dir = root.join("packages").join("worker-core").join("out").join("native");
-        if dir.exists() {
-            return Some(dir);
-        }
-        if !root.pop() {
-            break;
-        }
-    }
-    None
-}
-
 fn with_ext(base: &str) -> String {
     if cfg!(windows) { format!("{base}.exe") } else { base.to_string() }
 }
 
-/// Which builtin native cores are present on this machine (for the UI).
+/// Directories to search for a native core, in priority order:
+///   1. next to the app executable — where Tauri places bundled sidecars, so a
+///      shipped installer is self-contained.
+///   2. the monorepo dev build at packages/worker-core/out/native (walking up).
+fn candidate_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    if let Ok(mut root) = std::env::current_dir() {
+        for _ in 0..5 {
+            dirs.push(root.join("packages").join("worker-core").join("out").join("native"));
+            if !root.pop() {
+                break;
+            }
+        }
+    }
+    dirs
+}
+
+/// Which builtin native cores are present (bundled or dev), for the UI.
 pub fn available_cores() -> Vec<String> {
-    let Some(dir) = native_dir() else { return vec![] };
+    let dirs = candidate_dirs();
     NATIVE_BINARIES
         .iter()
-        .filter(|(_, b)| dir.join(with_ext(b)).exists())
+        .filter(|(_, b)| dirs.iter().any(|d| d.join(with_ext(b)).exists()))
         .map(|(_, b)| (*b).to_string())
         .collect()
 }
@@ -111,15 +119,13 @@ pub fn resolve_core(spec_hash: &str) -> Result<PathBuf, ExecError> {
     let base = binary_for_spec(spec_hash)
         .ok_or_else(|| ExecError::UnsupportedModule(spec_hash.to_string()))?;
     let exe = with_ext(base);
-    let dir = native_dir().ok_or_else(|| {
-        ExecError::CoreNotFound(PathBuf::from(format!("packages/worker-core/out/native/{exe}")))
-    })?;
-    let candidate = dir.join(&exe);
-    if candidate.exists() {
-        Ok(candidate)
-    } else {
-        Err(ExecError::CoreNotFound(candidate))
+    for dir in candidate_dirs() {
+        let candidate = dir.join(&exe);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
     }
+    Err(ExecError::CoreNotFound(PathBuf::from(exe)))
 }
 
 /// Evaluate `[range_start, range_end)` in buckets of `bucket_size` with the

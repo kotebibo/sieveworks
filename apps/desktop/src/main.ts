@@ -25,13 +25,26 @@ import {
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const logEl = $<HTMLPreElement>("log");
-const statsEl = $<HTMLDivElement>("stats");
 const startBtn = $<HTMLButtonElement>("start");
 const stopBtn = $<HTMLButtonElement>("stop");
+const stateBadge = $<HTMLSpanElement>("stateBadge");
 
 function log(line: string) {
   logEl.textContent += line + "\n";
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setState(label: string, cls: string) {
+  stateBadge.textContent = label;
+  stateBadge.className = `badge ${cls}`;
+}
+
+/** Compact number for the stat tiles (1.2M, 45.3k, 900). */
+function human(n: number): string {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return Math.round(n).toString();
 }
 
 // --- local worker key -----------------------------------------------------
@@ -52,14 +65,20 @@ $("wallet").textContent = wallet;
 
 // Which builtin native cores this machine can run + whether the GPU path is
 // active (hashgrind, self-conformed to the native core). Shown up front.
+const gpuBadge = $<HTMLSpanElement>("gpuBadge");
 Promise.all([
   invoke<string[]>("core_status").catch(() => []),
   invoke<string | null>("gpu_status").catch(() => null),
 ]).then(([cores, gpuBackend]) => {
-  const coreText = cores.length ? cores.join(", ") : "no native cores found";
-  const gpuText = gpuBackend ? ` · GPU: ${gpuBackend} (hash-grind)` : " · GPU: CPU-only";
-  $("core").textContent = coreText + gpuText;
+  $("core").textContent = cores.length ? cores.join(", ") : "no native cores found";
   if (cores.length) $("core").classList.remove("dim");
+  if (gpuBackend) {
+    gpuBadge.textContent = `GPU: ${gpuBackend}`;
+    gpuBadge.className = "badge badge-gpu";
+  } else {
+    gpuBadge.textContent = "GPU: CPU-only";
+    gpuBadge.className = "badge badge-cpu";
+  }
 });
 
 // Rust returns snake_case strings; convert to the BucketLeaf bigint shape the
@@ -163,9 +182,12 @@ async function workLoop() {
     if (verdict.status === "rejected") { log("submission rejected — halting"); break; }
 
     const rate = Math.round(Number(seeds) / (durationMs / 1000));
-    log(`chunk ${a.chunk_id.slice(0, 8)} score=${best.maxScore} ${rate.toLocaleString()} seeds/s ${verdict.status}`);
+    const via = raw.core_path.startsWith("gpu:") ? " (gpu)" : "";
+    log(`chunk ${a.chunk_id.slice(0, 8)} score=${best.maxScore} ${rate.toLocaleString()} seeds/s${via} ${verdict.status}`);
     const elapsed = (performance.now() - t0) / 1000;
-    statsEl.textContent = `${completed} chunks · ${(Number(seedsTotal) / 1e6).toFixed(1)}M seeds · ${Math.round(Number(seedsTotal) / elapsed).toLocaleString()} seeds/s avg`;
+    $("stChunks").textContent = human(completed);
+    $("stSeeds").textContent = human(Number(seedsTotal));
+    $("stRate").textContent = human(Math.round(Number(seedsTotal) / Math.max(elapsed, 0.001)));
   }
   stop();
 }
@@ -175,12 +197,14 @@ function start() {
   running = true;
   startBtn.disabled = true;
   stopBtn.disabled = false;
+  setState("working", "badge-run");
   void workLoop();
 }
 function stop() {
   running = false;
   startBtn.disabled = false;
   stopBtn.disabled = true;
+  setState("idle", "badge-idle");
 }
 
 startBtn.addEventListener("click", start);
