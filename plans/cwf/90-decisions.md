@@ -188,3 +188,16 @@ unconditional non-interactive soundness) but the right fit here. INTERIM until b
 option (b) probabilistic 10% + slow-lane, with honest "fraud proofs are roadmap" copy.
 Build = spec first (state-commitment format, bisection protocol, one-step proof,
 on-chain referee, escrow/window), owner review, then implement w/ teach-along. Week 3-4+.
+
+**Spec 03b params LOCKED (owner, Sep 11):** (1) window-gated finality;
+(2) coordinator floor + permissionless third-party challenging — the coordinator
+always samples a floor (~10%), third-party open_dispute is permissionless from
+day 1 (griefing self-punished by bond), challenger rewards deferred but bond-split
+forward-compatible. Key insight: the game doesn't cut detection cost (someone must
+re-run), it cuts resolution/trust cost + makes detection permissionless, so
+coverage = coordinator floor (we pay) + third-party re-exec (paid from the
+fraudster's bond) → scales with job value at zero marginal cost to us. Honest edge:
+quiet job + dishonest coordinator + no watcher = only after-the-fact public recheck
+until Tier 2. (3) short (minutes) coordinator-driven window; (4) SOL-denominated
+bonds sized from full-chunk re-exec cost, coordinator funds its own challenger bond.
+Build task #65; blocked-on-owner cleared.

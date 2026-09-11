@@ -43,6 +43,29 @@ computation by re-running 32 generations.**
 
 ---
 
+## 1b. Locked parameters (owner, Sep 11)
+
+- **Finality (#1):** window-gated (§6 v1). Optimistic chaining deferred to v2.
+- **Who challenges (#2): coordinator floor + permissionless on top.** The
+  coordinator ALWAYS challenges a sampled floor (reuse the ~10% training audit
+  compute — now emitting on-chain proofs, not a DB verdict). Third-party
+  `open_dispute` is permissionless from day one (griefing self-punished by a
+  bond, §8). Challenger *rewards* are deferred, but the bond-split (§8) is
+  designed so rewards switch on later WITHOUT a program change. Rationale:
+  detection cost is not reduced by the game (someone must re-run to notice
+  fraud) — what changes is that resolution is cheap+objective and detection is
+  permissionless, so **coverage = coordinator floor (we pay) + third-party
+  re-exec (paid from the fraudster's bond)**. Coverage thus scales with a job's
+  bond value/attention at zero marginal cost to us: quiet small jobs ride the
+  floor, valuable jobs attract the crowd. Honest edge: a quiet job + dishonest
+  coordinator + no watcher is only caught by after-the-fact public recheck until
+  Tier 2 — stated plainly in copy.
+- **Window length (#3):** short (minutes), coordinator-driven; per-lineage,
+  configurable on the bounty.
+- **Bonds (#4):** denominated in **SOL** (matches the global worker stake),
+  sized from the measured full-chunk re-execution cost. The coordinator funds
+  its own challenger bond from a reserve.
+
 ## 2. Trust model & goal
 
 Replace "the coordinator's word decides training payouts" with "**any single
@@ -305,13 +328,10 @@ the full game exists.
 
 ---
 
-## 13. Open questions for the owner
+## 13. Open questions — RESOLVED (owner, Sep 11, see §1b)
 
-- `CHALLENGE_WINDOW` length vs demo latency — how live must training finality
-  feel on stage?
-- Open third-party challenging for CWF, or coordinator-only challenger v1
-  (simpler, still trust-reducing via public recheck)?
-- Bond sizing denomination (SOL vs the bounty's price unit) and who funds the
-  challenger bond when the coordinator is the challenger.
-- Is window-gated finality (§6 v1) acceptable for the demo, or is optimistic
-  chaining needed to show throughput?
+All four settled: window-gated finality; coordinator floor + permissionless
+third-party challenging (rewards deferred, bond-split forward-compatible); short
+(minutes) coordinator-driven window; SOL-denominated bonds sized from full-chunk
+re-exec cost. Remaining calibration (exact window seconds, exact bond
+multiplier) is a build-time measurement, not a design decision.
