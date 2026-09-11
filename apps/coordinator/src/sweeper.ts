@@ -51,5 +51,14 @@ export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Time
       console.log(`sweeper: reclaimed=${reclaimed.length} quarantined=${quarantined.length}`);
     }
   };
-  return setInterval(() => void tick().catch((e) => console.error("sweeper:", e)), intervalMs);
+  // Overlap guard: a tick can run longer than intervalMs (the fraud-proof
+  // confirmation sweep re-runs a whole training chunk, ~25s). Without this,
+  // setInterval fires concurrent ticks that pile dispatches onto the single
+  // verify thread and trip its per-dispatch timeout, restarting it mid-replay.
+  let ticking = false;
+  return setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    void tick().catch((e) => console.error("sweeper:", e)).finally(() => { ticking = false; });
+  }, intervalMs);
 }

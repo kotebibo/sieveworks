@@ -758,7 +758,7 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
     left join users u on u.id = r.worker_id
     where c.state = 'awaiting_confirm'
     order by c.generation_offset asc
-    limit 4`;
+    limit 1`;
 
   let acted = 0;
   for (const row of rows) {
@@ -770,17 +770,24 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
     if (a.status === 2) { await sql`update chunks set state = 'rejected' where id = ${row.chunk_id}`; acted++; continue; }
     if (slot < Number(a.openedSlot) + Number(a.windowSlots)) continue; // window not elapsed
 
-    const replayed = await replayTrainingChunk(deps, row).catch(() => null);
+    const replayed = await replayTrainingChunk(deps, row).catch((e) => {
+      console.error(`[fraud-proof] replay error for ${row.chunk_id}:`, e);
+      return null;
+    });
     const [finRow] = await sql<{ bytes: Buffer }[]>`
       select bytes from chunk_outputs where result_id = ${row.result_id} and bucket_index = ${row.buckets_count}`;
     const delivered = finRow ? new Uint8Array(finRow.bytes) : null;
-    const matches = !!(replayed && delivered && Buffer.compare(Buffer.from(replayed.final), Buffer.from(delivered)) === 0);
-    {
-      const dsalt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
-      console.log(`[fp-debug] chunk=${row.chunk_id} buckets=${row.buckets_count} params=${JSON.stringify(row.params)} ` +
-        `replay=${replayed ? Buffer.from(bucketDigest16(dsalt, replayed.final)).toString("hex") : "null"} ` +
-        `delivered=${delivered ? Buffer.from(bucketDigest16(dsalt, delivered)).toString("hex") : "null"} match=${matches}`);
+
+    // NEVER reject on our OWN failure. A null replay (RPC/thread error) or a
+    // missing delivered state is "cannot verify yet", not proven fraud — skip
+    // and retry next tick. Only a SUCCESSFUL replay that genuinely diverges is
+    // a fabrication. (This also prevents a coordinator hiccup from slashing an
+    // honest worker and halting a lineage.)
+    if (!replayed || !delivered) {
+      console.warn(`[fraud-proof] cannot verify ${row.chunk_id} yet (replay=${replayed ? "ok" : "null"}, delivered=${delivered ? "ok" : "null"}) — retry next tick`);
+      continue;
     }
+    const matches = Buffer.compare(Buffer.from(replayed.final), Buffer.from(delivered)) === 0;
 
     if (matches) {
       try {
@@ -794,15 +801,17 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
       acted++;
     } else {
       // Fabricated: record the transcript on-chain, slash the bond, halt the
-      // lineage. Nothing was confirmed, so no origin was poisoned.
+      // lineage. Nothing was confirmed, so no origin was poisoned. The DB chunk
+      // is marked rejected regardless of the on-chain reject outcome (idempotent
+      // — the assertion may already be Rejected from a prior tick).
       const salt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
-      const trueDigest = replayed ? bucketDigest16(salt, replayed.final) : new Uint8Array(16);
+      const trueDigest = bucketDigest16(salt, replayed.final);
       await rejectChunkChain({
         jobUuid: row.job_id, lineageIdx: row.lineage_idx, genStart,
         badIndex: row.buckets_count, // Tier 1 reports chunk-level; Tier 2 pinpoints the bucket
-        providedStartDigest: replayed?.originDigest ?? new Uint8Array(16),
+        providedStartDigest: replayed.originDigest,
         claimedTrueDigest: trueDigest,
-      }).catch((e) => console.error(`[fraud-proof] reject failed ${row.chunk_id}:`, e));
+      }).catch((e) => console.error(`[fraud-proof] on-chain reject failed ${row.chunk_id} (marking rejected anyway):`, e));
 
       const worker = (row.payout_address as string | null) ?? (row.wallet_address as string);
       const reqStake = BigInt(row.req_stake ?? "0");
