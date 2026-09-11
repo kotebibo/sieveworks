@@ -15,7 +15,10 @@ import { SieveWorkerModule } from "@sieveworks/wasm-runtime";
  */
 
 const COORD = process.env.NEXT_PUBLIC_COORDINATOR_URL ?? "https://sieveworks-coordinator.fly.dev";
-const HASH = "c30dd09d8754449771bbf77c074f9fbf0f38a5c74318d5aa5c5707c1439957d8";
+// The TRAINING flappy module (mode: training — exports init_state/advance_bucket/
+// best_of_state). NOT the prize/candidate "learns to fly" build (c30dd09d), which
+// has no init_state and would throw.
+const HASH = "af4a0f4faab545ef3e1bc80017c01638e79f4b81fea26424cac66519b5704e35";
 
 // Course/world constants — identical to the training replay so the look matches.
 const WORLD_H = 480, PIPE_SPACING = 220, PIPE_W = 52, PIPE_GAP = 150, PIPE_SPEED = 3, FIRST_PIPE_X = 400, BIRD_X = 120;

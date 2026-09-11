@@ -214,18 +214,21 @@ a:hover > .wordmark-spin { transform: rotate(90deg); }
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   pointer-events: none;
 }
+/* The HUD sits ON the game's light-blue sky canvas (theme-independent), so its
+   colours are FIXED — not theme tokens, which would flip to light text on the
+   white chips in dark mode. */
 .flappy-chip {
   font-family: var(--font-mono), "Spline Sans Mono", ui-monospace, monospace;
-  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.88);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: #16324f;
+  background: rgba(255, 255, 255, 0.92);
   border-radius: 999px; padding: 5px 11px;
-  box-shadow: 0 2px 8px rgba(30, 36, 48, 0.14);
+  box-shadow: 0 2px 8px rgba(20, 40, 70, 0.18);
 }
-.flappy-chip-green { color: var(--verified); }
+.flappy-chip-green { color: #157a45; }
 .flappy-status {
   margin-left: auto;
   font-size: 11px; color: #2a4359;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.78);
   border-radius: 999px; padding: 4px 10px;
 }
