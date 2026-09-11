@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { Transaction } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import { stakeIx, unstakeIx } from "@sieveworks/chain";
-import { fetchStakeStatus, solStr } from "@/lib/api";
+import { fetchStakeStatus, solStr, unstakeReq } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui";
 
 /**
@@ -14,8 +15,10 @@ import { Button } from "@/components/ui";
  */
 export function StakePanel({ compact = false }: { compact?: boolean }) {
   const { connection } = useConnection();
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, signTransaction } = useWallet();
+  const { token } = useAuth();
   const [amount, setAmount] = useState<bigint | null>(null);
+  const [coordinator, setCoordinator] = useState<string | null>(null);
   const [addSol, setAddSol] = useState("0.05");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -23,23 +26,39 @@ export function StakePanel({ compact = false }: { compact?: boolean }) {
   const refresh = useCallback(() => {
     if (!publicKey) { setAmount(null); return; }
     fetchStakeStatus(publicKey.toBase58())
-      .then((s) => setAmount(BigInt(s.amount_lamports)))
+      .then((s) => { setAmount(BigInt(s.amount_lamports)); setCoordinator(s.coordinator); })
       .catch(() => setAmount(null));
   }, [publicKey]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Staking is a plain send (worker-only signer). Withdrawing now requires the
+  // coordinator to CO-SIGN (unstake-lock): we partial-sign and hand the tx to
+  // the coordinator, which co-signs only if we hold no outstanding work.
   async function send(kind: "stake" | "unstake") {
     if (!publicKey) return;
     setBusy(true); setMsg(null);
     try {
-      const ix = kind === "stake"
-        ? stakeIx({ worker: publicKey, amountLamports: BigInt(Math.round((Number(addSol) || 0) * 1e9)) })
-        : unstakeIx({ worker: publicKey });
-      const sig = await sendTransaction(new Transaction().add(ix), connection);
-      const bh = await connection.getLatestBlockhash();
-      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
-      setMsg(kind === "stake" ? "staked ✓" : "withdrawn ✓");
+      if (kind === "stake") {
+        const ix = stakeIx({ worker: publicKey, amountLamports: BigInt(Math.round((Number(addSol) || 0) * 1e9)) });
+        const sig = await sendTransaction(new Transaction().add(ix), connection);
+        const bh = await connection.getLatestBlockhash();
+        await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+        setMsg("staked ✓");
+      } else {
+        if (!token || !signTransaction) { setMsg("sign in with this wallet to withdraw"); return; }
+        if (!coordinator) { setMsg("coordinator unavailable — try again"); return; }
+        const ix = unstakeIx({ worker: publicKey, coordinator: new PublicKey(coordinator) });
+        const tx = new Transaction().add(ix);
+        tx.feePayer = publicKey;
+        tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        const signed = await signTransaction(tx);
+        const bytes = signed.serialize({ requireAllSignatures: false });
+        let bin = ""; for (const b of bytes) bin += String.fromCharCode(b);
+        const r = await unstakeReq(btoa(bin), token);
+        if (!r.ok) throw new Error(r.outstanding ? `withdraw blocked — ${r.outstanding} chunk(s) still settling` : (r.error ?? "withdraw failed"));
+        setMsg("withdrawn ✓");
+      }
       setTimeout(refresh, 1200);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -79,8 +98,8 @@ export function StakePanel({ compact = false }: { compact?: boolean }) {
       </div>
       <p className="text-[11px] text-[var(--text-faint)] leading-relaxed">
         One bond covers every paid bounty. Cheat and get caught → it's burned
-        (sent to the incinerator, not to us or the funder). Withdrawable after a
-        short cooldown.
+        (sent to the incinerator, not to us or the funder). Withdrawable once
+        your leases have settled and after a short cooldown.
       </p>
     </div>
   );

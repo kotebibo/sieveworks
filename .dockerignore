@@ -1,7 +1,11 @@
 .git
+.claude
 node_modules
 **/node_modules
 **/.next
 **/.turbo
 **/dist
+**/target
+**/src-tauri/gen
+apps/desktop
 packages/worker-core/out

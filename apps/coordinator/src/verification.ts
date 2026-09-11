@@ -34,7 +34,11 @@ import { notify } from "./notifications.js";
  * Rejections are OPAQUE to workers; reasons live in result_rejections only.
  */
 
-const AUDIT_RATE_PCT = Number(process.env.AUDIT_RATE_PCT ?? 5);
+// 10% (was 5%): at a 5% audit rate the per-chunk break-even stake multiplier is
+// 19× price, above the 15× floor, leaving a fabricator a thin positive EV.
+// 10% drops break-even to 9× — comfortably under the floor — and aligns
+// extremum with the render/training modes. Overhead rises ~0.45%→~0.9%.
+const AUDIT_RATE_PCT = Number(process.env.AUDIT_RATE_PCT ?? 10);
 // output_hash has ONE detection layer (challenge recompute) instead of three,
 // so it samples at a higher default rate (Spec 01 §5).
 const OUTPUT_AUDIT_RATE_PCT = Number(process.env.OUTPUT_AUDIT_RATE_PCT ?? 10);

@@ -1,0 +1,10 @@
+# Vercel uploads the repo root (web build needs apps/web + packages/*). Keep the
+# upload lean — Vercel does not reliably honor nested .gitignore, so the 2.1GB
+# Rust build tree below was getting swept in and aborting the upload. Only
+# exclude things the web build never needs; leave packages/* dist intact.
+**/target
+apps/desktop
+.claude
+.git
+**/node_modules
+**/.next

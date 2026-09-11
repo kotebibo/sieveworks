@@ -309,6 +309,20 @@ export async function submitClaim(jobId: string, txB64: string, token: string): 
   return (await res.json()) as { ok?: boolean; signature?: string; error?: string };
 }
 
+/** Withdraw a worker bond. The worker partial-signs an unstake tx; the
+ * coordinator co-signs and submits only if no work is outstanding. */
+export async function unstakeReq(
+  txB64: string,
+  token: string
+): Promise<{ ok?: boolean; signature?: string; error?: string; outstanding?: number }> {
+  const res = await fetch(`${COORDINATOR_URL}/v1/unstake`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ tx: txB64 }),
+  });
+  return (await res.json()) as { ok?: boolean; signature?: string; error?: string; outstanding?: number };
+}
+
 /** Solana explorer link for the configured cluster. */
 export function explorerTx(sig: string): string {
   return `https://explorer.solana.com/tx/${sig}?cluster=devnet`;

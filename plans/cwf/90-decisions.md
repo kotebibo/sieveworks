@@ -82,3 +82,109 @@ falling behind (part of every build-day summary).
   reference forever.
 - Engine extraction to `packages/worker-engine` happens W3 day 1 with a
   same-day browser regression (the riskiest refactor of the month).
+
+---
+
+## Audit findings → OWNER DECISIONS (roast-sieveworks run, Sep 11 2026)
+
+Ran the critique skill against HEAD. It found a **real critical hole in the
+stake code shipped Sep 10**. I applied the safe, unambiguous fixes overnight
+and DEPLOYED the coordinator (see "Done overnight" below). These four are
+genuine tradeoffs I did NOT touch — they need your call:
+
+### D1 — The critical: on-chain `unstake`-lock (program redeploy)
+`unstake` is a direct on-chain call with no coordinator gate, so a worker can
+lease → unstake → submit fraud and a caught cheat burns 0. I shipped the
+coordinator **stopgap** (re-check bond at submit time — forces staying bonded
+through submission). Residual hole: worker can still unstake in the window
+between submit and challenge resolution. **Real fix** = gate `unstake` behind a
+coordinator co-signature (mirror `close_job`/`slash`) and refuse to co-sign
+while the worker holds a live lease/open challenge. Cost: ~half-day + a program
+redeploy (needs devnet SOL + your OK, since program upgrades are the one
+irreversible-ish step). **Decision: do the on-chain lock, or is the stopgap +
+short challenge window good enough for the demo?**
+
+### D2 — Stake multiplier vs break-even (one constant, but it's a real tradeoff)
+`requiredStake = max(price×15, 0.02 SOL)`. At a 5% audit rate the per-chunk
+break-even multiplier is **19×**, so 15× leaves a small positive EV to a
+fabricator (before honeypots/challenge, which constrain WHICH cheats are
+feasible). Options: (a) raise multiplier to ≥19×, (b) raise audit rate from 5%,
+(c) lean on the 0.02 floor (it dominates for cheap chunks anyway) and soften the
+copy. You wanted MINIMUM friction — raising the multiplier or audit rate both
+add cost. **Decision: which lever?** (My lean: bump floor-relative is fine;
+raise audit rate to ~8-10% for extremum to match modes 2/3, cheaper than more
+friction. But it's your economics call.)
+
+### D3 — "Negative expected value" copy (honesty rail)
+`how-it-works` + `StakePanel` state burn-on-slash as an *active* deterrent;
+README still says it's "being wired … until then the deterrent is audit
+exposure." Now that enforcement landed, these disagree. **Decision: (a) update
+README to say enforcement is live (and I fix D1/D2 so the strong claim is
+TRUE), or (b) soften the site copy to the README's hedge.** I did NOT edit the
+copy — this is the pitch-honesty boundary and your call which direction.
+
+### D4 — Two "known-gap" design items (defer vs fix)
+- **Training origin poisoning**: an unaudited fabricated training chunk becomes
+  the stored `latest_state` origin for the next honest worker (90% skip the
+  audit lottery). Fix = force a transition challenge / coordinator recompute
+  before writing `latest_state`. ~half-day.
+- **Unclaimed-earnings escrow lock**: a worker who earns 1 lamport and never
+  claims blocks the funder's `close_job` reclaim forever. Fix = grace-window
+  reclaim of all-but-outstanding. ~2h.
+**Decision: fix in-month, or document as known limits for the demo?**
+
+### Done overnight (safe, deployed — no decision needed)
+- Coordinator: submit-time bond re-check (D1 stopgap); lease gate now requires
+  stake `state == Active` (was amount-only — a slashed-but-overfunded worker
+  kept leasing); candidate rate-limit keyed on IP only (was IP+wallet →
+  sybil-bypassable free scoring oracle). **Deployed to Fly.**
+- On-chain `slash` docstring corrected (said "returned to buyer's pool"; code
+  burns to incinerator). Comment-only, no redeploy.
+- Full ranked report saved; the two Unverified items (viz WebRTC under CSP;
+  "0.45% overhead" being extremum-best-case) are worth a look but unproven.
+
+---
+
+## EXECUTED (Sep 11, owner ratified D1–D4)
+
+Owner picked: D1 on-chain unstake-lock, D2 audit rate→10%, D3 README-matches-site, D4 fix training poisoning.
+
+- **D1 DONE + verified on devnet.** Program upgraded (tx 4GqQbaFR…) — `unstake` now
+  requires the coordinator (const `COORDINATOR_AUTHORITY = 5FBPoodn…`) as a co-signer
+  (address-bound; global bond has no escrow to carry it). Coordinator `/v1/unstake`
+  co-signs only when no chunk is `leased`/`submitted` for the worker. Web StakePanel
+  switched to partial-sign→co-sign. PROVEN: (a) gate returns 409 "work outstanding"
+  with a lease held; (b) old worker-only unstake rejected on-chain — AnchorError
+  AccountNotSigner (3010). Not independently executed: a full valid co-signed
+  withdrawal landing (couldn't clear the deployer's live lease without churn) — but
+  mechanics are byte-identical to the proven claim co-sign, and the negative test
+  shows the program validates the coordinator account. Cooldown kept as backstop.
+- **D2 DONE.** `AUDIT_RATE_PCT` 5→10 (deployed). Break-even multiplier now 9× (< 15×
+  floor). how-it-works "0.45% @ 5%" → "0.9% @ 10%".
+- **D3 DONE.** README "Stake and slash" rewritten: enforcement is live (bond + submit
+  re-check + unstake-lock + burn), 10% audit → below-zero EV, honest residuals named.
+- **D4 — NOT a clean half-day fix; needs an owner economics call.** Root issue:
+  verifying sequential GA state cheaply is the hard part. Options: (a) full-replay
+  every training chunk from stored origin before writing `latest_state` = provably
+  no poisoning but ~100% verify overhead (kills the "cheap verification" story for
+  training); (b) keep probabilistic 10% + slow-lane retroactive flag (current,
+  documented honestly — poisoning detected after the fact, not prevented); (c) build
+  a fraud-proof bisection game (correct AND cheap, but a real feature, not a patch);
+  (d) offer (a) as a paid "high-assurance" flag, default (b). RECOMMEND (d) or (b)+
+  honest copy. Deferred to owner — did NOT ship a subtly-wrong "fix".
+- **Unclaimed-earnings escrow lock**: documented as known limit (pull-based payout;
+  owner confirmed money isn't auto-pushed). Grace-window reclaim available on request.
+
+**D4 RATIFIED (owner, Sep 11): option (c) — fraud-proof bisection.** Rationale: for a
+compute *marketplace*, prover cost is the binding constraint — a zkVM would tax every
+worker 10^3–10^6× (self-defeating), while bisection asks the worker for ~nothing beyond
+the commitment and lets the referee settle any dispute by re-running ONE generation.
+Precedent: TrueBit, Arbitrum. Accepted caveats: honest-challenger liveness (coordinator
+= default challenger; game resolves objectively so 1 honest challenger beats a lying
+majority → strictly LESS trust than today), a challenge window (escrow until it passes),
+canonical bit-exact single-generation transition (already have via deterministic WASM),
+data availability, game-correctness attack surface. NOT the abstract-best (zk wins on
+unconditional non-interactive soundness) but the right fit here. INTERIM until built:
+option (b) probabilistic 10% + slow-lane, with honest "fraud proofs are roadmap" copy.
+Build = spec first (state-commitment format, bisection protocol, one-step proof,
+on-chain referee, escrow/window), owner review, then implement w/ teach-along. Week 3-4+.

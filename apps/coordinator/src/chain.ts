@@ -14,6 +14,7 @@ import {
   uuidToBytes,
   closeJobIx,
   slashIx,
+  unstakeIx,
   stakePda,
   decodeWorkerStake,
   type JobEscrowAccount,
@@ -151,6 +152,21 @@ export function expectedClaimIx(args: {
     cumulativeLamports: args.cumulativeLamports,
     nonce: args.nonce,
   });
+}
+
+/** Co-sign and submit a worker's unstake transaction. Same mechanism as a
+ * claim (verify upstream, add the authority signature, send) — the route only
+ * calls this once its books confirm the worker has no outstanding work. */
+export async function coSignAndSendUnstake(serialized: Uint8Array): Promise<string> {
+  return coSignAndSendClaim(serialized);
+}
+
+/** Build the unstake instruction we EXPECT — byte-exact check before co-signing
+ * a bond withdrawal (program now requires the coordinator as co-signer). */
+export function expectedUnstakeIx(args: { worker: string }) {
+  init();
+  if (!authority) throw new Error("chain rail disabled");
+  return unstakeIx({ worker: new PublicKey(args.worker), coordinator: authority.publicKey });
 }
 
 /** Read a worker's on-chain stake (active bond amount + state). Returns null

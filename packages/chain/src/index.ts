@@ -255,12 +255,17 @@ export function stakeIx(args: { worker: PublicKey; amountLamports: bigint }): Tr
   });
 }
 
-/** Withdraw the whole bond after the cooldown (program enforces the wait). */
-export function unstakeIx(args: { worker: PublicKey }): TransactionInstruction {
+/** Withdraw the whole bond. Requires BOTH the worker and the coordinator as
+ * signers (program upgrade 2026-09, the unstake-lock): the coordinator only
+ * co-signs when its books show no outstanding lease/challenge, so a caught
+ * cheat can't pull the bond ahead of a slash. The cooldown still applies.
+ * Account order mirrors the Unstake struct: worker, coordinator, stake PDA. */
+export function unstakeIx(args: { worker: PublicKey; coordinator: PublicKey }): TransactionInstruction {
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: args.worker, isSigner: true, isWritable: true },
+      { pubkey: args.coordinator, isSigner: true, isWritable: false },
       { pubkey: stakePda(args.worker), isSigner: false, isWritable: true },
     ],
     data: concat(DISC.unstake),

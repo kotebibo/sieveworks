@@ -24,6 +24,8 @@ import { Transaction } from "@solana/web3.js";
 import {
   chainEnabled,
   coSignAndSendClaim,
+  coSignAndSendUnstake,
+  expectedUnstakeIx,
   coordinatorPubkey,
   expectedClaimIx,
   expectedCloseIx,
@@ -271,6 +273,62 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       return { ok: true, signature: sig };
     } catch (err) {
       return reply.code(502).send({ error: `claim failed on-chain: ${String(err)}` });
+    }
+  });
+
+  // Worker withdraws their bond. The program (unstake-lock upgrade 2026-09)
+  // requires the COORDINATOR to co-sign — we co-sign ONLY when our books show
+  // the worker holds no live lease and no chunk still in verification (which
+  // includes an open challenge). That closes the audit's #1 hole: a caught
+  // cheat can no longer pull the bond out ahead of a slash. Same byte-exact,
+  // never-sign-what-we-didn't-author pattern as claims.
+  app.post("/v1/unstake", async (req, reply) => {
+    const wallet = requireAuth(req, reply);
+    if (!wallet) return;
+    if (!chainEnabled()) return reply.code(503).send({ error: "chain rail disabled" });
+    const { tx: txB64 } = (req.body ?? {}) as { tx?: string };
+    if (!txB64) return reply.code(400).send({ error: "tx required (base64)" });
+
+    // Outstanding-work gate: any chunk leased to this identity (by either the
+    // local worker key or the connected payout wallet) that has not reached a
+    // terminal state is slashable, so the bond must stay locked.
+    const [work] = await sql<{ n: number }[]>`
+      select count(*)::int as n
+      from chunks c
+      join users u on u.id = c.leased_to
+      where (u.wallet_address = ${wallet} or u.payout_address = ${wallet})
+        and c.state in ('leased', 'submitted')`;
+    if ((work?.n ?? 0) > 0) {
+      return reply.code(409).send({ error: "work outstanding — cannot withdraw until leases settle", outstanding: work!.n });
+    }
+
+    let tx: Transaction;
+    try {
+      tx = Transaction.from(Buffer.from(txB64, "base64"));
+    } catch {
+      return reply.code(400).send({ error: "malformed transaction" });
+    }
+    if (tx.instructions.length !== 1) return reply.code(400).send({ error: "expected exactly one instruction" });
+    const ix = tx.instructions[0]!;
+
+    // Byte-exact: same program, discriminator, and the same three accounts in
+    // order (worker, coordinator, stake PDA). The worker must be the fee payer.
+    const expected = expectedUnstakeIx({ worker: wallet });
+    if (!ix.programId.equals(expected.programId) || Buffer.compare(ix.data, expected.data) !== 0) {
+      return reply.code(400).send({ error: "instruction is not a valid unstake for this worker" });
+    }
+    if (ix.keys.length !== expected.keys.length ||
+        !ix.keys.every((k, i) => k.pubkey.equals(expected.keys[i]!.pubkey)
+          && k.isSigner === expected.keys[i]!.isSigner && k.isWritable === expected.keys[i]!.isWritable)) {
+      return reply.code(400).send({ error: "accounts do not match expected unstake" });
+    }
+    if (!tx.feePayer?.equals(expected.keys[0]!.pubkey)) return reply.code(400).send({ error: "fee payer must be the worker" });
+
+    try {
+      const sig = await coSignAndSendUnstake(Buffer.from(txB64, "base64"));
+      return { ok: true, signature: sig };
+    } catch (err) {
+      return reply.code(502).send({ error: `unstake failed on-chain: ${String(err)}` });
     }
   });
 
@@ -659,11 +717,15 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (reqStake > 0n) {
       const staker = payout_address ?? wallet_address;
       const st = await fetchStake(staker);
-      if (!st || st.amount < reqStake) {
+      // state must be Active (0): a Slashed (3) worker can still sit above the
+      // floor if they over-bonded, and must not keep leasing after a proven
+      // cheat; a Withdrawn (2) worker has no live bond regardless of amount.
+      if (!st || st.amount < reqStake || st.state !== 0) {
         return reply.code(402).send({
           error: "stake required",
           required_stake_lamports: reqStake.toString(),
           have_lamports: (st?.amount ?? 0n).toString(),
+          stake_state: st?.state ?? null,
           staker,
         });
       }
@@ -731,7 +793,8 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
              c.range_start::text, c.range_end::text,
              j.id as job_id, j.worker_spec_hash, j.bucket_size, j.params,
              j.price_per_chunk_lamports::text, j.current_record_score, j.verification_mode,
-             u.wallet_address
+             j.required_stake_lamports::text as req_stake,
+             u.wallet_address, u.payout_address
       from chunks c
       join jobs j on j.id = c.job_id
       left join users u on u.id = c.leased_to
@@ -750,6 +813,28 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
     if (row.lease_nonce !== sub.nonce) return reply.code(422).send({ error: "rejected" });
     if (!verifyResultSignature(sub, row.wallet_address))
       return reply.code(422).send({ error: "rejected" });
+
+    // Stopgap for the "unstake-after-lease" hole (audit finding #1): the bond
+    // is checked at lease time, but `unstake` is a direct on-chain call the
+    // worker can make afterward, so a caught cheat could burn 0. Re-verify the
+    // bond is still live at submit — this forces the attacker to stay bonded
+    // through submission, restoring slash's teeth for the caught fraction.
+    // Residual (documented, needs the on-chain unstake-lock): a worker can
+    // still unstake in the window between submit and challenge resolution.
+    const reqStakeSubmit = BigInt(row.req_stake ?? "0");
+    if (reqStakeSubmit > 0n && chainEnabled()) {
+      const staker = (row.payout_address as string | null) ?? (row.wallet_address as string);
+      const st = await fetchStake(staker);
+      if (!st || st.amount < reqStakeSubmit || st.state !== 0) {
+        return reply.code(402).send({
+          error: "stake required",
+          required_stake_lamports: reqStakeSubmit.toString(),
+          have_lamports: (st?.amount ?? 0n).toString(),
+          stake_state: st?.state ?? null,
+          staker,
+        });
+      }
+    }
 
     const [result] = await sql<{ id: string }[]>`
       insert into results (chunk_id, worker_id, extremum_score, witness_seed, merkle_root,
@@ -847,8 +932,11 @@ export function registerRoutes(app: FastifyInstance, deps: Deps): void {
       rateLimit: {
         max: 30,
         timeWindow: "1 minute",
-        keyGenerator: (req: { ip: string; body?: unknown }) =>
-          `${req.ip}:${String((req.body as { wallet_address?: string })?.wallet_address ?? "")}`,
+        // Key on IP alone. Keying on the wallet too let an attacker rotate a
+        // fresh keypair per request (identity is free) into a fresh bucket,
+        // defeating the limit entirely and turning submitCandidate's returned
+        // score into a free hill-climbing oracle.
+        keyGenerator: (req: { ip: string }) => req.ip,
       },
     },
   }, async (req, reply) => {

@@ -50,8 +50,8 @@ export default function HowItWorks() {
       <div className="mt-10 panel ticked p-5">
         <div className="barlabel mb-2">The number that matters</div>
         <p className="text-[15px] text-[var(--text-dim)]">
-          Verification costs about <b className="text-[var(--text)] font-semibold">0.45% of the work it
-          checks</b> at a 5% audit rate — and roughly 9% even if you audit <em>every</em> chunk. The
+          Verification costs about <b className="text-[var(--text)] font-semibold">0.9% of the work it
+          checks</b> at a 10% audit rate — and roughly 9% even if you audit <em>every</em> chunk. The
           industry alternative, running everything two or three times, costs 200%.
         </p>
       </div>

@@ -28,6 +28,15 @@ const UNSTAKE_COOLDOWN_SLOTS: u64 = 9_000;
 /// Solana's incinerator — lamports sent here are burned by the runtime.
 const INCINERATOR: Pubkey = pubkey!("1nc1nerator11111111111111111111111111111111");
 
+/// The coordinator's on-chain authority. A worker's bond is GLOBAL (one
+/// WorkerStake PDA per worker, not tied to any job), so unlike `slash`/`close_job`
+/// there is no JobEscrow to carry the coordinator pubkey via `has_one`. We bind
+/// `unstake` to this fixed key instead: the coordinator must co-sign a
+/// withdrawal, and it refuses to co-sign (off-chain) while the worker holds a
+/// live lease or open challenge — so a caught cheat can no longer pull the bond
+/// out from under a pending slash. Rotating this key requires a program upgrade.
+const COORDINATOR_AUTHORITY: Pubkey = pubkey!("5FBPoodnH48YbYeLEcahFjxXWWhiX5nUJ8yJry4aMKhE");
+
 #[program]
 pub mod sieveworks {
     use super::*;
@@ -181,10 +190,11 @@ pub mod sieveworks {
         Ok(())
     }
 
-    /// Coordinator slashes a cheating worker's bond. The slashed lamports move
-    /// into the job escrow (returned to the buyer's pool) rather than to the
-    /// coordinator — the coordinator must never profit from slashing, or it
-    /// gains an incentive to slash honest workers.
+    /// Coordinator slashes a cheating worker's bond. The slashed lamports are
+    /// BURNED to Solana's incinerator (see the inline comment below) — never to
+    /// the coordinator, the funder, or other contributors. Burning is the only
+    /// deterrent that is un-gameable by a Sybil and gives the coordinator no
+    /// incentive to slash honest workers.
     pub fn slash(ctx: Context<Slash>, _job_id: [u8; 16], amount: u64) -> Result<()> {
         let stake = &mut ctx.accounts.worker_stake;
         let slash_amount = amount.min(stake.amount);
@@ -280,6 +290,13 @@ pub struct Stake<'info> {
 pub struct Unstake<'info> {
     #[account(mut)]
     pub worker: Signer<'info>,
+    // The coordinator MUST co-sign a withdrawal (address-bound to the fixed
+    // authority, since a global bond has no escrow to carry the pubkey). This
+    // is the unstake-lock: the coordinator only co-signs when its books show
+    // the worker has no outstanding lease or open challenge, so the bond can't
+    // be withdrawn ahead of a slash. The cooldown below remains as a backstop.
+    #[account(address = COORDINATOR_AUTHORITY)]
+    pub coordinator: Signer<'info>,
     #[account(
         mut,
         seeds = [b"stake", worker.key().as_ref()],
