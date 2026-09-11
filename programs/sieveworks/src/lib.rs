@@ -585,12 +585,17 @@ pub struct ConfirmChunk<'info> {
 #[derive(Accounts)]
 #[instruction(job_id: [u8; 16], lineage_idx: u32, gen_start: u64)]
 pub struct RejectChunk<'info> {
-    #[account(address = COORDINATOR_AUTHORITY)]
+    #[account(mut, address = COORDINATOR_AUTHORITY)]
     pub coordinator: Signer<'info>,
+    // Closed on reject (rent back to the coordinator) so the (job, lineage,
+    // gen_start) slot is free for an honest worker to re-assert. The fraud
+    // transcript survives in the emitted ChunkRejected event / tx log — the
+    // account itself carried nothing that needs to persist.
     #[account(
         mut,
         seeds = [b"assert", job_id.as_ref(), &lineage_idx.to_le_bytes(), &gen_start.to_le_bytes()],
-        bump = assertion.bump
+        bump = assertion.bump,
+        close = coordinator
     )]
     pub assertion: Account<'info, ChunkAssertion>,
 }

@@ -800,10 +800,14 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
       events.emit("chunk_confirmed", { chunk_id: row.chunk_id, job_id: row.job_id });
       acted++;
     } else {
-      // Fabricated: record the transcript on-chain, slash the bond, halt the
-      // lineage. Nothing was confirmed, so no origin was poisoned. The DB chunk
-      // is marked rejected regardless of the on-chain reject outcome (idempotent
-      // — the assertion may already be Rejected from a prior tick).
+      // Fabricated (a SUCCESSFUL replay genuinely diverged): slash the bond,
+      // record the on-chain reject (which CLOSES the assertion PDA, freeing the
+      // gen_start slot), and RE-POOL the chunk so an honest worker redoes it —
+      // never brick the lineage/job on a single reject. Nothing was confirmed,
+      // so no origin was poisoned. Repeated rejects on the same chunk quarantine
+      // it (bounded grief) without stalling the job (maybeCompleteJob treats
+      // quarantined as terminal). The successor still rolls only on a real
+      // confirm, so the honest continuation resumes the lineage.
       const salt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
       const trueDigest = bucketDigest16(salt, replayed.final);
       await rejectChunkChain({
@@ -811,23 +815,36 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
         badIndex: row.buckets_count, // Tier 1 reports chunk-level; Tier 2 pinpoints the bucket
         providedStartDigest: replayed.originDigest,
         claimedTrueDigest: trueDigest,
-      }).catch((e) => console.error(`[fraud-proof] on-chain reject failed ${row.chunk_id} (marking rejected anyway):`, e));
+      }).catch((e) => console.error(`[fraud-proof] on-chain reject failed ${row.chunk_id}:`, e));
 
       const worker = (row.payout_address as string | null) ?? (row.wallet_address as string);
       const reqStake = BigInt(row.req_stake ?? "0");
       if (worker && reqStake > 0n) {
         await slashStake(row.job_id, worker, reqStake);
       }
-      await sql`update lineages set flagged = true where id = ${row.lineage_id}`;
-      await sql`update chunks set state = 'rejected' where id = ${row.chunk_id}`;
       await sql`
         insert into result_rejections (result_id, reason, detail)
         values (${row.result_id}, 'challenge_failed',
                 ${sql.json({ slash: true, fraud_proof: true, detail: "window re-run diverged from the committed final state" } as never)})
         on conflict (result_id) do nothing`;
-      events.emit("chunk_rejected", { chunk_id: row.chunk_id, job_id: row.job_id });
-      events.emit("lineage_flagged", { job_id: row.job_id, lineage_id: row.lineage_id });
-      console.warn(`[fraud-proof] chunk ${row.chunk_id} FAILED window re-run — rejected + slashed, lineage ${row.lineage_id} halted`);
+
+      const REJECT_CAP = 3;
+      const [att] = await sql<{ attempts: number }[]>`
+        update chunks set attempts = attempts + 1 where id = ${row.chunk_id} returning attempts`;
+      await deps.leases.clear(row.chunk_id);
+      if ((att?.attempts ?? 0) >= REJECT_CAP) {
+        await sql`update chunks set state = 'quarantined', leased_to = null, lease_nonce = null,
+          lease_expires_at = null, leased_at = null where id = ${row.chunk_id}`;
+        await sql`update lineages set flagged = true where id = ${row.lineage_id}`;
+        events.emit("chunk_quarantined", { chunk_id: row.chunk_id, job_id: row.job_id });
+        console.warn(`[fraud-proof] chunk ${row.chunk_id} rejected ${att!.attempts}× — quarantined; lineage ${row.lineage_id} halted (job can still complete)`);
+        await maybeCompleteJob(row.job_id);
+      } else {
+        await sql`update chunks set state = 'pending', leased_to = null, lease_nonce = null,
+          lease_expires_at = null, leased_at = null where id = ${row.chunk_id}`;
+        events.emit("chunk_rejected", { chunk_id: row.chunk_id, job_id: row.job_id });
+        console.warn(`[fraud-proof] chunk ${row.chunk_id} diverged — slashed + re-pooled (attempt ${att!.attempts}/${REJECT_CAP})`);
+      }
       acted++;
     }
   }
@@ -923,8 +940,14 @@ export async function expireDeliveries(deps: VerifyDeps): Promise<number> {
 /** Bounty completion: when the last chunk is accepted, close the job and
  * notify the funder (fires once, on the open→closed transition). */
 async function maybeCompleteJob(jobId: string): Promise<void> {
+  // Complete when no chunk is still in-flight. Terminal states are accepted
+  // (done), rejected, and quarantined (a chunk that couldn't be completed —
+  // e.g. repeated fraud or crashes); a quarantined chunk must NOT hang the job
+  // forever, so it counts as terminal here.
   const [remaining] = await sql<{ n: number }[]>`
-    select count(*)::int as n from chunks where job_id = ${jobId} and state <> 'accepted'`;
+    select count(*)::int as n from chunks
+    where job_id = ${jobId}
+      and state in ('pending', 'leased', 'submitted', 'verifying', 'awaiting_outputs', 'awaiting_confirm')`;
   if (remaining!.n === 0) {
     const closed = await sql<{ creator_id: string }[]>`
       update jobs set status = 'closed', closed_at = now()
