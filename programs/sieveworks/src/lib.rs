@@ -259,6 +259,7 @@ pub mod sieveworks {
         job_id: [u8; 16],
         lineage_idx: u32,
         gen_start: u64,
+        asserter: Pubkey,
         merkle_root: [u8; 32],
         d_start: [u8; 16],
         d_end: [u8; 16],
@@ -272,7 +273,11 @@ pub mod sieveworks {
         a.job_id = job_id;
         a.lineage_idx = lineage_idx;
         a.gen_start = gen_start;
-        a.asserter = ctx.accounts.worker.key();
+        // The worker being vouched for (its payout wallet — the slash target if
+        // this chunk is later proven fabricated). Passed as an arg, not a
+        // signer: the coordinator asserts on the worker's behalf (Tier 1), so a
+        // delivered chunk needs no per-chunk wallet signature from the worker.
+        a.asserter = asserter;
         a.coordinator = ctx.accounts.coordinator.key();
         a.merkle_root = merkle_root;
         a.d_start = d_start;
@@ -533,9 +538,7 @@ pub struct InitLineage<'info> {
 #[derive(Accounts)]
 #[instruction(job_id: [u8; 16], lineage_idx: u32, gen_start: u64)]
 pub struct AssertChunk<'info> {
-    #[account(mut)]
-    pub worker: Signer<'info>,
-    #[account(address = COORDINATOR_AUTHORITY)]
+    #[account(mut, address = COORDINATOR_AUTHORITY)]
     pub coordinator: Signer<'info>,
     #[account(
         seeds = [b"lin", job_id.as_ref(), &lineage_idx.to_le_bytes()],
@@ -544,7 +547,7 @@ pub struct AssertChunk<'info> {
     pub lineage: Account<'info, TrainingLineage>,
     #[account(
         init,
-        payer = worker,
+        payer = coordinator,
         space = 8 + ChunkAssertion::INIT_SPACE,
         seeds = [b"assert", job_id.as_ref(), &lineage_idx.to_le_bytes(), &gen_start.to_le_bytes()],
         bump
@@ -556,7 +559,7 @@ pub struct AssertChunk<'info> {
 #[derive(Accounts)]
 #[instruction(job_id: [u8; 16], lineage_idx: u32, gen_start: u64)]
 pub struct ConfirmChunk<'info> {
-    #[account(address = COORDINATOR_AUTHORITY)]
+    #[account(mut, address = COORDINATOR_AUTHORITY)]
     pub coordinator: Signer<'info>,
     #[account(
         mut,
@@ -564,10 +567,15 @@ pub struct ConfirmChunk<'info> {
         bump = lineage.bump
     )]
     pub lineage: Account<'info, TrainingLineage>,
+    // Confirmed assertions are closed to reclaim rent — the lineage anchor
+    // carries the confirmed digest forward, and gen_start only advances so the
+    // PDA is never re-init'd. (Rejected assertions are NOT closed: their fraud
+    // transcript stays on-chain for public recheck.)
     #[account(
         mut,
         seeds = [b"assert", job_id.as_ref(), &lineage_idx.to_le_bytes(), &gen_start.to_le_bytes()],
-        bump = assertion.bump
+        bump = assertion.bump,
+        close = coordinator
     )]
     pub assertion: Account<'info, ChunkAssertion>,
 }

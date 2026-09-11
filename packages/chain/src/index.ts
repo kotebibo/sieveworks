@@ -356,18 +356,19 @@ export function initLineageIx(args: {
   });
 }
 
-/** Worker asserts a completed chunk (worker pays the account rent + signs; the
- * coordinator co-signs). The program enforces d_start == the lineage anchor. */
+/** Coordinator asserts a worker's completed chunk on-chain (coordinator signs +
+ * pays rent; `asserter` = the worker's payout wallet, the slash target). The
+ * program enforces d_start == the lineage anchor (no forged origin). */
 export function assertChunkIx(args: {
   jobUuid: string;
   lineageIdx: number;
   genStart: bigint;
+  asserter: PublicKey;
   merkleRoot: Uint8Array; // 32 bytes
   dStart: Uint8Array; // 16 bytes
   dEnd: Uint8Array; // 16 bytes
   nBuckets: number;
   windowSlots: bigint;
-  worker: PublicKey;
   coordinator: PublicKey;
 }): TransactionInstruction {
   if (args.merkleRoot.length !== 32) throw new Error("merkleRoot must be 32 bytes");
@@ -376,15 +377,15 @@ export function assertChunkIx(args: {
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
-      { pubkey: args.worker, isSigner: true, isWritable: true },
-      { pubkey: args.coordinator, isSigner: true, isWritable: false },
+      { pubkey: args.coordinator, isSigner: true, isWritable: true },
       { pubkey: lineagePda(jobId, args.lineageIdx), isSigner: false, isWritable: false },
       { pubkey: assertionPda(jobId, args.lineageIdx, args.genStart), isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: concat(
       DISC.assert_chunk, jobId, u32le(args.lineageIdx), u64le(args.genStart),
-      args.merkleRoot, args.dStart, args.dEnd, u16le(args.nBuckets), u64le(args.windowSlots)
+      args.asserter.toBuffer(), args.merkleRoot, args.dStart, args.dEnd,
+      u16le(args.nBuckets), u64le(args.windowSlots)
     ),
   });
 }
