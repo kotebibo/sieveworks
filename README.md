@@ -2,7 +2,9 @@
 
 **Verifiable distributed search compute — live at [sievework.com](https://sievework.com).**
 
-Fund a brute-force search job; contributors run chunks of the search space on their own hardware — in the browser via WebAssembly or through a native CLI — and get paid per verified chunk on Solana (devnet). Every discovery is permanently attributed on-chain to whoever found it. Verification is deterministic and publicly reproducible at **0.45% measured overhead**, versus the ~200% of replication-based approaches.
+Fund a brute-force search job; contributors run chunks of the search space on their own hardware — in the browser via WebAssembly, a native CLI, or a native **desktop app** (CPU, with a GPU kernel for hash-grind) — and get paid per verified chunk on Solana (devnet). Every discovery is permanently attributed on-chain to whoever found it. Verification is deterministic and publicly reproducible at **~0.9% measured overhead** (at a 10% audit rate), versus the ~200% of replication-based approaches.
+
+**New here?** [`ARCHITECTURE.md`](ARCHITECTURE.md) is the one-page system map — components, the four verification surfaces, the on-chain money/trust flow, and the honest trust boundaries.
 
 The class of problem served: **hard to find, easy to check** — compact inputs, deterministic evaluation, and a witness anyone can re-verify in microseconds. Launch vertical: Minecraft seedfinding (via [cubiomes](https://github.com/Cubitect/cubiomes), MIT). The platform itself is game-agnostic.
 
