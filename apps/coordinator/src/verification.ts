@@ -18,8 +18,13 @@ import { bucketDigest16 } from "@sieveworks/wasm-runtime";
 import { createHash } from "node:crypto";
 import { candidatePool } from "./candidates.js";
 import type { BucketPool } from "./bucketPool.js";
-import { attestFind, chainEnabled, slashStake } from "./chain.js";
+import {
+  attestFind, chainEnabled, slashStake,
+  assertChunkChain, confirmChunkChain, rejectChunkChain, initLineageChain,
+  fetchAssertion, fetchLineageAnchor, currentSlot,
+} from "./chain.js";
 import { sql } from "./db.js";
+import { env } from "./env.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
 import { registry } from "./moduleRegistry.js";
@@ -555,19 +560,55 @@ export async function deliverTrainingState(
     return { ok: false, error: "state does not match the committed final leaf", code: 422 };
   }
 
-  // Lineage bookkeeping: the state carries the lineage's best-ever.
-  const mod = await registry.get(row.worker_spec_hash);
-  const witness = mod.bestOfState(state, JSON.stringify(row.params));
-  const bestScore = new DataView(witness.buffer, witness.byteOffset).getBigInt64(0, true);
-  const bestGenome = Buffer.from(witness.slice(8));
-
   // Keep the final state per chunk (bucket_index = buckets_count marks it):
-  // the slow-lane re-audit replays any accepted chunk from its predecessor's
-  // stored state, catching post-acceptance fabrication retroactively.
+  // the fraud-proof re-run and the slow lane both replay against it.
   await sql`
     insert into chunk_outputs (result_id, bucket_index, bytes)
     values (${resultId}, ${row.buckets_count}, ${Buffer.from(state)})
     on conflict do nothing`;
+
+  // Spec 03b (flag on): assert the chunk on-chain and PARK it — it advances the
+  // lineage only after the coordinator re-runs it within the challenge window
+  // (confirmTrainingChunks). Flag off: finalize immediately (probabilistic path).
+  if (env.TRAINING_FRAUD_PROOF && chainEnabled()) {
+    const asserted = await assertTrainingChunk(resultId).catch((e) => {
+      console.error(`[fraud-proof] assert failed for result ${resultId}:`, e);
+      return false;
+    });
+    if (asserted) {
+      await sql`update chunks set state = 'awaiting_confirm' where id = ${row.chunk_id}`;
+      events.emit("chunk_asserted", { chunk_id: row.chunk_id, job_id: row.job_id });
+      return { ok: true };
+    }
+    // Assert couldn't be placed (chain hiccup) — never strand a delivered
+    // chunk; fall through to the immediate path. Logged above.
+  }
+
+  await finalizeTrainingChunk(resultId);
+  return { ok: true };
+}
+
+/** The lineage-advancing tail of a confirmed training chunk: record the best,
+ * advance latest_state, roll the successor, credit earnings, complete-check.
+ * Called inline (probabilistic path) or from the sweep after on-chain confirm.
+ * Self-contained (re-queries) so both callers use it identically. */
+async function finalizeTrainingChunk(resultId: string): Promise<void> {
+  const [row] = await sql`
+    select r.buckets_count, r.worker_id,
+           c.id as chunk_id, c.range_start::text, c.range_end::text, c.lineage_id, c.generation_offset::text,
+           j.id as job_id, j.price_per_chunk_lamports::text, j.chunk_size::text,
+           j.search_space_end::text, j.params, j.worker_spec_hash
+    from results r join chunks c on c.id = r.chunk_id join jobs j on j.id = c.job_id
+    where r.id = ${resultId}`;
+  if (!row) return;
+  const [fin] = await sql<{ bytes: Buffer }[]>`
+    select bytes from chunk_outputs where result_id = ${resultId} and bucket_index = ${row.buckets_count}`;
+  if (!fin) return;
+  const state = new Uint8Array(fin.bytes);
+  const mod = await registry.get(row.worker_spec_hash);
+  const witness = mod.bestOfState(state, JSON.stringify(row.params));
+  const bestScore = new DataView(witness.buffer, witness.byteOffset).getBigInt64(0, true);
+  const bestGenome = Buffer.from(witness.slice(8));
 
   const G = BigInt(row.chunk_size);
   const gensDone = BigInt(row.generation_offset ?? "0") + G;
@@ -578,9 +619,6 @@ export async function deliverTrainingState(
       updated_at = now()
     where id = ${row.lineage_id}`;
 
-  // ROLL the successor before anything can run the completion check. The
-  // lineage's slice of the range is [idx*perLineage, (idx+1)*perLineage);
-  // this chunk ends at range_end — the next starts there if room remains.
   const M = Math.max(1, Number((row.params as { lineages?: unknown }).lineages ?? 1));
   const perLineage = BigInt(row.search_space_end) / BigInt(M);
   const nextStart = BigInt(row.range_end);
@@ -608,7 +646,177 @@ export async function deliverTrainingState(
     best_score: bestScore.toString(),
   });
   await maybeCompleteJob(row.job_id);
-  return { ok: true };
+}
+
+/** Spec 03b: assert a delivered chunk on-chain (enters the challenge window).
+ * Computes the endpoints — d_start = digest(anchored origin), d_end =
+ * digest(delivered final state) — lazy-inits the lineage anchor for gen 0, and
+ * records the worker (payout wallet) as the slash target. Self-contained. */
+async function assertTrainingChunk(resultId: string): Promise<boolean> {
+  const [row] = await sql`
+    select r.buckets_count, r.merkle_root, r.worker_id,
+           c.lineage_id, c.generation_offset::text,
+           j.id as job_id, j.params, j.worker_spec_hash,
+           li.idx as lineage_idx,
+           u.payout_address, u.wallet_address
+    from results r
+    join chunks c on c.id = r.chunk_id
+    join jobs j on j.id = c.job_id
+    join lineages li on li.id = c.lineage_id
+    left join users u on u.id = r.worker_id
+    where r.id = ${resultId}`;
+  if (!row) return false;
+  const [fin] = await sql<{ bytes: Buffer }[]>`
+    select bytes from chunk_outputs where result_id = ${resultId} and bucket_index = ${row.buckets_count}`;
+  if (!fin) return false;
+
+  const paramsJson = JSON.stringify(row.params);
+  const salt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
+  const dEnd = bucketDigest16(salt, new Uint8Array(fin.bytes));
+  const genStart = BigInt(row.generation_offset ?? "0");
+
+  // Anchored origin: init_state for gen 0, else the lineage's confirmed state.
+  let originState: Uint8Array;
+  if (genStart === 0n) {
+    const mod = await registry.get(row.worker_spec_hash);
+    originState = mod.initState(lineageSeed32(row.job_id, row.lineage_id), paramsJson);
+  } else {
+    const [lin] = await sql<{ latest_state: Buffer | null }[]>`
+      select latest_state from lineages where id = ${row.lineage_id}`;
+    if (!lin?.latest_state) return false;
+    originState = new Uint8Array(lin.latest_state);
+  }
+  const dStart = bucketDigest16(salt, originState);
+
+  // Lazy-init the on-chain lineage anchor (once, at gen 0).
+  const anchor = await fetchLineageAnchor(row.job_id, row.lineage_idx);
+  if (!anchor) await initLineageChain(row.job_id, row.lineage_idx, dStart);
+
+  const asserter = (row.payout_address as string | null) ?? (row.wallet_address as string);
+  if (!asserter) return false;
+  await assertChunkChain({
+    jobUuid: row.job_id, lineageIdx: row.lineage_idx, genStart, asserter,
+    merkleRoot: fromHex(row.merkle_root), dStart, dEnd,
+    nBuckets: row.buckets_count, windowSlots: BigInt(env.TRAINING_WINDOW_SLOTS),
+  });
+  return true;
+}
+
+/** Re-run a whole training chunk from its anchored origin (the Tier-1 referee).
+ * Returns the replayed final state + the origin digest, or null if the origin
+ * can't be resolved. Same replay as the slow lane, factored for reuse. */
+async function replayTrainingChunk(
+  deps: VerifyDeps,
+  row: { job_id: string; lineage_id: string; generation_offset: string | null; buckets_count: number; params: unknown; worker_spec_hash: string }
+): Promise<{ final: Uint8Array; originDigest: Uint8Array } | null> {
+  const paramsJson = JSON.stringify(row.params);
+  const salt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
+  let originB64: string;
+  if (row.generation_offset === "0" || row.generation_offset === null) {
+    const seedHex = Buffer.from(lineageSeed32(row.job_id, row.lineage_id)).toString("hex");
+    originB64 = await deps.bucketPool.initStateB64(row.worker_spec_hash, seedHex, paramsJson);
+  } else {
+    const [lin] = await sql<{ latest_state: Buffer | null }[]>`
+      select latest_state from lineages where id = ${row.lineage_id}`;
+    if (!lin?.latest_state) return null;
+    originB64 = Buffer.from(lin.latest_state).toString("base64");
+  }
+  const originDigest = bucketDigest16(salt, new Uint8Array(Buffer.from(originB64, "base64")));
+  let stateB64 = originB64;
+  for (let k = 0; k < row.buckets_count; k++) {
+    stateB64 = await deps.bucketPool.advanceStateB64(row.worker_spec_hash, stateB64, paramsJson);
+  }
+  return { final: new Uint8Array(Buffer.from(stateB64, "base64")), originDigest };
+}
+
+/** Spec 03b confirmation sweep (Tier 1). For each parked (awaiting_confirm)
+ * chunk whose window has elapsed, re-run it from the anchored origin:
+ *   match   → confirm_chunk on-chain (advance the lineage anchor) + finalize.
+ *   diverge → reject_chunk (on-chain fraud transcript) + slash + flag lineage.
+ * The window-gating is what makes this PREVENTION: a fabricated chunk is caught
+ * before its state can ever become the next chunk's origin. */
+export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
+  if (!env.TRAINING_FRAUD_PROOF || !chainEnabled()) return 0;
+  const slot = await currentSlot();
+  if (slot === null) return 0;
+
+  const rows = await sql<{
+    chunk_id: string; lineage_id: string; generation_offset: string | null;
+    result_id: string; buckets_count: number;
+    job_id: string; params: unknown; worker_spec_hash: string; req_stake: string | null;
+    lineage_idx: number; payout_address: string | null; wallet_address: string | null;
+  }[]>`
+    select c.id as chunk_id, c.lineage_id, c.generation_offset::text,
+           r.id as result_id, r.buckets_count,
+           j.id as job_id, j.params, j.worker_spec_hash, j.required_stake_lamports::text as req_stake,
+           li.idx as lineage_idx,
+           u.payout_address, u.wallet_address
+    from chunks c
+    join jobs j on j.id = c.job_id and j.verification_mode = 'training'
+    join results r on r.chunk_id = c.id
+    join lineages li on li.id = c.lineage_id
+    left join users u on u.id = r.worker_id
+    where c.state = 'awaiting_confirm'
+    order by c.generation_offset asc
+    limit 4`;
+
+  let acted = 0;
+  for (const row of rows) {
+    const genStart = BigInt(row.generation_offset ?? "0");
+    const a = await fetchAssertion(row.job_id, row.lineage_idx, genStart);
+    if (!a) continue; // assertion not visible yet
+    // Reconcile if already resolved on-chain (defensive; coordinator drives it).
+    if (a.status === 1) { await finalizeTrainingChunk(row.result_id); acted++; continue; }
+    if (a.status === 2) { await sql`update chunks set state = 'rejected' where id = ${row.chunk_id}`; acted++; continue; }
+    if (slot < Number(a.openedSlot) + Number(a.windowSlots)) continue; // window not elapsed
+
+    const replayed = await replayTrainingChunk(deps, row).catch(() => null);
+    const [finRow] = await sql<{ bytes: Buffer }[]>`
+      select bytes from chunk_outputs where result_id = ${row.result_id} and bucket_index = ${row.buckets_count}`;
+    const delivered = finRow ? new Uint8Array(finRow.bytes) : null;
+    const matches = !!(replayed && delivered && Buffer.compare(Buffer.from(replayed.final), Buffer.from(delivered)) === 0);
+
+    if (matches) {
+      try {
+        await confirmChunkChain(row.job_id, row.lineage_idx, genStart);
+      } catch (e) {
+        console.error(`[fraud-proof] confirm failed (retry next tick) ${row.chunk_id}:`, e);
+        continue;
+      }
+      await finalizeTrainingChunk(row.result_id);
+      events.emit("chunk_confirmed", { chunk_id: row.chunk_id, job_id: row.job_id });
+      acted++;
+    } else {
+      // Fabricated: record the transcript on-chain, slash the bond, halt the
+      // lineage. Nothing was confirmed, so no origin was poisoned.
+      const salt = new Uint8Array(Buffer.from(jobSalt16Hex(row.job_id), "hex"));
+      const trueDigest = replayed ? bucketDigest16(salt, replayed.final) : new Uint8Array(16);
+      await rejectChunkChain({
+        jobUuid: row.job_id, lineageIdx: row.lineage_idx, genStart,
+        badIndex: row.buckets_count, // Tier 1 reports chunk-level; Tier 2 pinpoints the bucket
+        providedStartDigest: replayed?.originDigest ?? new Uint8Array(16),
+        claimedTrueDigest: trueDigest,
+      }).catch((e) => console.error(`[fraud-proof] reject failed ${row.chunk_id}:`, e));
+
+      const worker = (row.payout_address as string | null) ?? (row.wallet_address as string);
+      const reqStake = BigInt(row.req_stake ?? "0");
+      if (worker && reqStake > 0n) {
+        await slashStake(row.job_id, worker, reqStake);
+      }
+      await sql`update lineages set flagged = true where id = ${row.lineage_id}`;
+      await sql`update chunks set state = 'rejected' where id = ${row.chunk_id}`;
+      await sql`
+        insert into result_rejections (result_id, reason, detail)
+        values (${row.result_id}, 'challenge_failed',
+                ${sql.json({ slash: true, fraud_proof: true, detail: "window re-run diverged from the committed final state" } as never)})
+        on conflict (result_id) do nothing`;
+      events.emit("chunk_rejected", { chunk_id: row.chunk_id, job_id: row.job_id });
+      events.emit("lineage_flagged", { job_id: row.job_id, lineage_id: row.lineage_id });
+      console.warn(`[fraud-proof] chunk ${row.chunk_id} FAILED window re-run — rejected + slashed, lineage ${row.lineage_id} halted`);
+      acted++;
+    }
+  }
+  return acted;
 }
 
 /** Slow-lane re-audit (Spec 03 hardening): training chunks are sequential

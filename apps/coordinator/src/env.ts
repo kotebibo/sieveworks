@@ -30,6 +30,14 @@ const EnvSchema = z.object({
   SOLANA_RPC_URL: z.string().default("https://api.devnet.solana.com"),
   SOLANA_CLUSTER: z.string().default("devnet"),
   SOLANA_COORDINATOR_KEYPAIR: z.string().optional(),
+  // Spec 03b fraud-proof training verification. Default OFF: training keeps its
+  // probabilistic (10% + slow-lane) path untouched. ON: chunks are asserted
+  // on-chain and only advance the lineage after a coordinator re-run within the
+  // challenge window (window-gated finality = prevention, not just detection).
+  TRAINING_FRAUD_PROOF: z.coerce.boolean().default(false),
+  // Challenge window in Solana slots (~2/s on devnet). Short by design (owner:
+  // coordinator-driven). 150 ≈ 60-75s — enough for the sweep to re-run + confirm.
+  TRAINING_WINDOW_SLOTS: z.coerce.number().int().positive().default(150),
 });
 
 export const env = EnvSchema.parse(process.env);

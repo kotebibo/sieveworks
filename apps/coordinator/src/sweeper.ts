@@ -2,7 +2,7 @@ import { finalizePrizes } from "./candidates.js";
 import { sql } from "./db.js";
 import { events } from "./events.js";
 import type { LeaseStore } from "./leases.js";
-import { expireChallenges, expireDeliveries, slowLaneReaudit, type VerifyDeps } from "./verification.js";
+import { confirmTrainingChunks, expireChallenges, expireDeliveries, slowLaneReaudit, type VerifyDeps } from "./verification.js";
 
 /**
  * Lease reclaim. Postgres lease_expires_at is the truth (spec §7): expired
@@ -20,6 +20,10 @@ export function startSweeper(deps: VerifyDeps, intervalMs = 10_000): NodeJS.Time
       const caught = await slowLaneReaudit(deps).catch((e) => { console.error("slow-lane:", e); return 0; });
       if (caught > 0) console.warn("sweeper: slow-lane re-audit caught a diverged chain");
     }
+    // Spec 03b (flag on): confirm/reject training chunks whose challenge
+    // window has elapsed. No-op when the fraud-proof flag is off.
+    const confirmed = await confirmTrainingChunks(deps).catch((e) => { console.error("fraud-proof sweep:", e); return 0; });
+    if (confirmed > 0) console.log(`sweeper: fraud-proof sweep acted on ${confirmed} chunk(s)`);
     const expired = await expireChallenges(deps);
     if (expired > 0) console.log(`sweeper: expired ${expired} unanswered challenge(s)`);
     const undelivered = await expireDeliveries(deps);

@@ -273,6 +273,14 @@ export async function rejectChunkChain(args: {
   return await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
 }
 
+/** Current confirmed slot, or null if the rail is off. Used to decide whether
+ * a chunk's challenge window has elapsed before attempting confirm. */
+export async function currentSlot(): Promise<number | null> {
+  init();
+  if (!connection) return null;
+  try { return await connection.getSlot("confirmed"); } catch { return null; }
+}
+
 export async function fetchLineageAnchor(jobUuid: string, lineageIdx: number): Promise<TrainingLineageAccount | null> {
   init();
   if (!connection || !UUID_RE.test(jobUuid)) return null;
