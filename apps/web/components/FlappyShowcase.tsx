@@ -161,21 +161,27 @@ export function FlappyShowcase() {
         }
       }
 
-      // the flock — every bird, coloured by fitness (dim red → bright green);
-      // dead birds freeze at their last tick and fade.
+      // the flock — every bird, coloured by fitness (dim red → bright green).
+      // A living bird holds screen-x = BIRD_X as the world scrolls past. A dead
+      // bird stays pinned to WHERE it crashed and recedes left with the course
+      // (screen-x = BIRD_X − (t − deathTick)·speed), so you see it stuck on the
+      // pipe it hit rather than hovering — then it scrolls off.
       for (const b of rep.birds) {
+        if (b.nTicks === 0) continue;
         const alive = t < b.nTicks;
         const shownTick = alive ? t : b.nTicks - 1;
+        const x = alive ? BIRD_X : BIRD_X - (t - b.nTicks) * PIPE_SPEED;
+        if (x < -8) continue; // crashed and scrolled off the left edge
         const yOff = 12 + rep.nPipes * 4 + shownTick * 4;
-        if (b.nTicks === 0 || yOff + 2 > b.dv.byteLength) continue;
+        if (yOff + 2 > b.dv.byteLength) continue;
         const y = b.dv.getInt16(yOff, true) * (H / WORLD_H);
         const fit = b.pipes / rep.maxPipes;
         const hue = 8 + 132 * fit;
         const light = 46 + 10 * fit;
-        ctx.globalAlpha = alive ? 0.45 + 0.5 * fit : 0.12;
+        ctx.globalAlpha = alive ? 0.45 + 0.5 * fit : 0.3;
         ctx.fillStyle = `hsl(${hue} 74% ${light}%)`;
         ctx.beginPath();
-        ctx.arc(BIRD_X, y, alive && fit > 0.98 ? 7 : 5, 0, Math.PI * 2);
+        ctx.arc(x, y, alive && fit > 0.98 ? 7 : 5, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
