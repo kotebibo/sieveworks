@@ -63,6 +63,15 @@ const secretKey = loadOrCreateSecret();
 const wallet = walletFromSecretKey(secretKey);
 $("wallet").textContent = wallet;
 
+// Remember the coordinator + last job across launches (convenience only).
+const coordEl = $<HTMLInputElement>("coordinator");
+const jobEl = $<HTMLInputElement>("job");
+const savedCoord = localStorage.getItem("sieve.coordinator");
+if (savedCoord) coordEl.value = savedCoord;
+jobEl.value = localStorage.getItem("sieve.job") ?? "";
+coordEl.addEventListener("change", () => localStorage.setItem("sieve.coordinator", coordEl.value.trim()));
+jobEl.addEventListener("change", () => localStorage.setItem("sieve.job", jobEl.value.trim()));
+
 // Which builtin native cores this machine can run + whether the GPU path is
 // active (hashgrind, self-conformed to the native core). Shown up front.
 const gpuBadge = $<HTMLSpanElement>("gpuBadge");

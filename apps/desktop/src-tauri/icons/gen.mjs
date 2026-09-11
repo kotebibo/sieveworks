@@ -3,7 +3,9 @@
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
 
-const R = 0x2f, G = 0x79, B = 0xce, A = 0xff;
+// Brand sky-blue background with a light framed diamond (◈) mark.
+const BG = [0x2f, 0x79, 0xce];
+const FG = [0xed, 0xf3, 0xfb];
 
 function crc32(buf) {
   let c = ~0;
@@ -24,9 +26,18 @@ function png(size) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
   ihdr[8] = 8; ihdr[9] = 6; // 8-bit, RGBA
-  const row = Buffer.alloc(1 + size * 4);
-  for (let x = 0; x < size; x++) { const o = 1 + x * 4; row[o] = R; row[o+1] = G; row[o+2] = B; row[o+3] = A; }
-  const raw = Buffer.concat(Array.from({ length: size }, () => row));
+  const c = (size - 1) / 2;
+  const raw = Buffer.alloc(size * (1 + size * 4));
+  for (let y = 0; y < size; y++) {
+    const ro = y * (1 + size * 4); // row filter byte at ro (0 = none)
+    for (let x = 0; x < size; x++) {
+      const d = (Math.abs(x - c) + Math.abs(y - c)) / (size / 2); // diamond metric
+      // blue background, light diamond body, blue center notch → ◈
+      const col = d <= 0.62 && d >= 0.16 ? FG : BG;
+      const o = ro + 1 + x * 4;
+      raw[o] = col[0]; raw[o+1] = col[1]; raw[o+2] = col[2]; raw[o+3] = 0xff;
+    }
+  }
   return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 function ico(pngBuf, size) {
