@@ -753,7 +753,13 @@ export async function confirmTrainingChunks(deps: VerifyDeps): Promise<number> {
            u.payout_address, u.wallet_address
     from chunks c
     join jobs j on j.id = c.job_id and j.verification_mode = 'training'
-    join results r on r.chunk_id = c.id
+    -- pick the PASSED result that actually delivered a final state. A chunk can
+    -- carry a stale 'failed' result too (a rejected retry); selecting that one
+    -- gives delivered=null → "cannot verify" forever, and because the sweep
+    -- takes one chunk per tick in gen order, a single such chunk starves the
+    -- whole training-confirmation queue.
+    join results r on r.chunk_id = c.id and r.verification_state = 'passed'
+      and exists (select 1 from chunk_outputs o where o.result_id = r.id and o.bucket_index = r.buckets_count)
     join lineages li on li.id = c.lineage_id
     left join users u on u.id = r.worker_id
     where c.state = 'awaiting_confirm'
