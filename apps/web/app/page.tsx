@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { fetchFinds, fetchJobResults, fetchSpecs, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats, type WorkerSpec } from "@/lib/api";
 import { Wordmark } from "@/components/Wordmark";
 import { Sieve } from "@/components/Sieve";
 import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { CountUp, Mono, fmt } from "@/components/ui";
+
+// 3D hero backdrop — WebGL, client-only, lazy (keeps it out of the SSR/critical path).
+const Hero3D = dynamic(() => import("@/components/Hero3D").then((m) => m.Hero3D), { ssr: false });
 
 export default function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
@@ -51,8 +55,9 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-[1180px] px-5 sm:px-7">
       {/* ---------- hero (fullscreen) ---------- */}
-      <section className="min-h-[calc(100svh-58px)] flex flex-col pt-10">
-        <div className="flex-1 flex items-center">
+      <section className="relative overflow-hidden min-h-[calc(100svh-58px)] flex flex-col pt-10">
+        <Hero3D />
+        <div className="relative z-[1] flex-1 flex items-center">
         <div className="grid grid-cols-1 gap-10 lg:gap-14 lg:grid-cols-[1.02fr_1fr] items-center w-full">
           <div>
             <h1 className="reveal font-display font-extrabold leading-[1.08] tracking-[-0.035em] text-[clamp(44px,6.2vw,80px)]">
@@ -112,7 +117,7 @@ export default function Home() {
         </div>
 
         {/* full-width stat band pinned to the bottom of the fullscreen hero */}
-        <div className="reveal-fade mt-10 pb-8 pt-6 border-t border-[var(--border)] grid grid-cols-2 sm:grid-cols-4" style={{ animationDelay: "0.44s" }}>
+        <div className="relative z-[1] reveal-fade mt-10 pb-8 pt-6 border-t border-[var(--border)] grid grid-cols-2 sm:grid-cols-4" style={{ animationDelay: "0.44s" }}>
           <HeroStat n={stats ? Number(stats.chunks_accepted) : 0} l="Chunks verified" />
           <HeroStat n={stats ? Number(stats.contributors) : 0} l="Contributors" />
           <HeroStat n={stats ? Number(stats.seeds_evaluated) : 0} l="Seeds total" />

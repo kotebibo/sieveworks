@@ -232,3 +232,21 @@ a:hover > .wordmark-spin { transform: rotate(90deg); }
   background: rgba(255, 255, 255, 0.78);
   border-radius: 999px; padding: 4px 10px;
 }
+
+/* ---- hero 3D backdrop (the sieve lattice) ---- */
+.hero3d-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;   /* clicks pass through to hero content */
+  overflow: hidden;
+}
+.hero3d-wrap canvas { display: block; width: 100% !important; height: 100% !important; }
+/* Fade the field away from the headline (top-left) so copy stays crisp; let it
+   bloom toward the lower-right. Theme-aware via --bg. */
+.hero3d-mask {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(103deg, var(--bg) 0%, var(--bg) 26%, transparent 60%),
+    linear-gradient(to bottom, var(--bg) 0%, transparent 22%, transparent 82%, var(--bg) 100%);
+}
