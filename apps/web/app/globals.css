@@ -127,6 +127,24 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .reveal, .reveal-panel, .reveal-fade { opacity: 1; animation: none; transform: none; }
 }
+
+/* Scroll-reveal engine (components/Reveal.tsx). Transition toggled by .is-in
+   when the block enters the viewport, so it's smooth and interruptible.
+   Variety by direction; stagger via inline transition-delay. */
+.reveal-on {
+  opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.rv-up { transform: translateY(28px); }
+.rv-left { transform: translateX(-32px); }
+.rv-right { transform: translateX(32px); }
+.rv-scale { transform: scale(0.955); }
+.rv-fade { transform: none; }
+.reveal-on.is-in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal-on { opacity: 1 !important; transform: none !important; transition: none; }
+}
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .live-pulse { animation: live-pulse 2s ease-in-out infinite; }
 
