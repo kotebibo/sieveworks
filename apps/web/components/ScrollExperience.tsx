@@ -190,6 +190,7 @@ export function ScrollExperience() {
   const [reduce, setReduce] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [heroVisible, setHeroVisible] = useState(true);
 
   useEffect(() => {
     setReduce(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -209,6 +210,16 @@ export function ScrollExperience() {
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerout", onLeave, { passive: true });
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerout", onLeave); };
+  }, [mounted, reduce, mobile]);
+
+  // pause the WebGL render loop entirely once the hero scrolls out of view
+  useEffect(() => {
+    if (!mounted || reduce || mobile) return;
+    const el = sectionRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setHeroVisible(e.isIntersecting), { threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
   }, [mounted, reduce, mobile]);
 
   // scroll → progress (0..1 across the tall section) + beat opacities. rAF-throttled.
@@ -277,10 +288,12 @@ export function ScrollExperience() {
 
   return (
     <section ref={sectionRef} className="relative" style={{ height: "560vh" }}>
+      <h1 className="sr-only">Sieveworks — verifiable distributed compute. Pay strangers to compute in a browser tab and prove they actually did it, settled on Solana.</h1>
       <div className="sticky top-0 h-screen w-full overflow-hidden">
         <Canvas
           className="absolute inset-0"
           dpr={[1, 1.75]}
+          frameloop={heroVisible ? "always" : "never"}
           gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
           camera={{ position: [0.4, 3.4, 7.6], fov: 46 }}
           onCreated={({ gl }) => gl.setClearColor(0x000000, 0)}
