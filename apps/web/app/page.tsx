@@ -9,10 +9,12 @@ import { Sieve } from "@/components/Sieve";
 import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/Magnetic";
+import { HeroFallback } from "@/components/HeroFallback";
 import { CountUp, fmt } from "@/components/ui";
 
-// Full-screen scroll-driven 3D hero — WebGL, client-only, lazy (off the critical path).
-const ScrollExperience = dynamic(() => import("@/components/ScrollExperience").then((m) => m.ScrollExperience), { ssr: false });
+// Full-screen scroll-driven 3D hero — WebGL, client-only, lazy (off the critical
+// path). The static HeroFallback paints instantly so there's never a blank hero.
+const ScrollExperience = dynamic(() => import("@/components/ScrollExperience").then((m) => m.ScrollExperience), { ssr: false, loading: () => <HeroFallback /> });
 
 export default function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
