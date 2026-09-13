@@ -133,13 +133,13 @@ body {
    Variety by direction; stagger via inline transition-delay. */
 .reveal-on {
   opacity: 0;
-  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.85s cubic-bezier(0.22, 1, 0.36, 1), transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity, transform;
 }
-.rv-up { transform: translateY(28px); }
-.rv-left { transform: translateX(-32px); }
-.rv-right { transform: translateX(32px); }
-.rv-scale { transform: scale(0.955); }
+.rv-up { transform: translateY(52px); }
+.rv-left { transform: translateX(-56px); }
+.rv-right { transform: translateX(56px); }
+.rv-scale { transform: scale(0.92); }
 .rv-fade { transform: none; }
 .reveal-on.is-in { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
