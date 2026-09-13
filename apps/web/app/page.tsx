@@ -8,6 +8,7 @@ import { Wordmark } from "@/components/Wordmark";
 import { Sieve } from "@/components/Sieve";
 import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
+import { Magnetic } from "@/components/Magnetic";
 import { CountUp, fmt } from "@/components/ui";
 
 // Full-screen scroll-driven 3D hero — WebGL, client-only, lazy (off the critical path).
@@ -211,8 +212,8 @@ export default function Home() {
             <h2 className="font-display font-extrabold text-[clamp(30px,4vw,46px)] tracking-[-0.03em]">It's live. Join the swarm.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)]">A browser tab is a worker. No install, no signup.</p>
             <div className="mt-7 flex gap-3 justify-center flex-wrap">
-              <Link href="/contribute" className="sheen font-medium text-[14px] px-6 py-3 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link>
-              <Link href="/bounties" className="font-medium text-[14px] px-6 py-3 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">Post a search</Link>
+              <Magnetic><Link href="/contribute" data-cursor className="sheen inline-block font-medium text-[14px] px-6 py-3 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link></Magnetic>
+              <Magnetic><Link href="/bounties" data-cursor className="inline-block font-medium text-[14px] px-6 py-3 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">Post a search</Link></Magnetic>
             </div>
           </section>
         </Reveal>

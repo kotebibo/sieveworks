@@ -218,6 +218,59 @@ a:hover > .wordmark-spin { transform: rotate(90deg); }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* ============================================================
+   HIGH-END MOTION CHROME — momentum scroll, custom cursor, intro.
+   All gated behind JS reduced-motion / fine-pointer checks; the CSS
+   below only styles what those guards allow to mount.
+   ============================================================ */
+
+/* Lenis momentum smooth-scroll (components/ClientChrome.tsx). */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+.lenis.lenis-smooth iframe { pointer-events: none; }
+
+/* Custom cursor (components/CustomCursor.tsx). Native cursor hidden only when
+   the ring is mounted; text fields keep their I-beam. */
+.has-custom-cursor, .has-custom-cursor * { cursor: none !important; }
+.has-custom-cursor input, .has-custom-cursor textarea, .has-custom-cursor select, .has-custom-cursor [contenteditable="true"] { cursor: auto !important; }
+.cursor-dot, .cursor-ring { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9999; border-radius: 9999px; will-change: transform; }
+.cursor-dot { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--accent); }
+.cursor-ring {
+  width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: width 0.24s ease, height 0.24s ease, margin 0.24s ease, background 0.24s ease, border-color 0.24s ease;
+}
+.cursor-ring.cursor-hot { width: 56px; height: 56px; margin: -28px 0 0 -28px; background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); }
+.cursor-ring.cursor-press { width: 26px; height: 26px; margin: -13px 0 0 -13px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* Intro curtain (components/IntroReveal.tsx). */
+.intro-curtain {
+  position: fixed; inset: 0; z-index: 10000; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.intro-out { animation: intro-lift 0.6s cubic-bezier(0.7, 0, 0.25, 1) forwards; }
+@keyframes intro-lift { to { transform: translateY(-100%); } }
+.intro-mark { display: flex; align-items: center; gap: 14px; }
+.intro-glyph { display: inline-flex; animation: intro-glyph 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes intro-glyph { from { opacity: 0; transform: rotate(-90deg) scale(0.6); } to { opacity: 1; transform: none; } }
+.intro-word {
+  font-size: clamp(22px, 4vw, 34px); white-space: nowrap;
+  animation: intro-word 0.9s 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes intro-word {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); letter-spacing: 0.42em; }
+  to { opacity: 1; clip-path: inset(0 0 0 0); letter-spacing: 0.14em; }
+}
+.intro-line { margin-top: 22px; width: 180px; height: 2px; background: var(--border); position: relative; overflow: hidden; }
+.intro-line::after { content: ""; position: absolute; inset: 0; background: var(--accent); transform: translateX(-100%); animation: intro-scan 1.05s 0.1s cubic-bezier(0.6, 0, 0.2, 1) forwards; }
+@keyframes intro-scan { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-glyph, .intro-word, .intro-line::after, .intro-out { animation: none; }
+}
+
 /* ---- live flappy showcase (homepage) ---- */
 .flappy {
   position: relative;

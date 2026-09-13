@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { AuthButton } from "@/components/AuthButton";
 import { Wordmark } from "@/components/Wordmark";
 import { NavLinks } from "@/components/NavLinks";
+import { ClientChrome } from "@/components/ClientChrome";
 
 // Newsreader — a literary serif with optical sizing and true italics. The
 // anti-generic display voice: serif headlines against grotesque body + mono
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <WalletContext>
             <AuthProvider>
+            <ClientChrome />
             <header className="border-b border-[var(--border)] sticky top-0 z-20 backdrop-blur-md"
               style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)" }}>
               <div className="mx-auto max-w-[1180px] px-5 sm:px-7 h-[58px] flex items-center gap-7">

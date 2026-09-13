@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Magnetic } from "@/components/Magnetic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -36,21 +37,23 @@ function key(p: number, stops: [number, number][]) {
   return stops[stops.length - 1][1];
 }
 
-type Seed = { x: number; z: number; y: number; vy: number; kind: 0 | 1 | 2; caught: boolean; caughtAt: number; decided: boolean };
+type Seed = { x: number; z: number; y: number; vy: number; kind: 0 | 1 | 2; caught: boolean; caughtAt: number; decided: boolean; ox: number; oz: number };
+type Pointer = { x: number; y: number; active: boolean };
 const rollKind = (): 0 | 1 | 2 => { const r = Math.random(); return r < 0.05 ? 2 : r < 0.22 ? 1 : 0; };
 
-function Scene({ progress, reduce }: { progress: { current: number }; reduce: boolean }) {
+function Scene({ progress, pointer, reduce }: { progress: { current: number }; pointer: { current: Pointer }; reduce: boolean }) {
   const seedMesh = useRef<THREE.InstancedMesh>(null);
   const cellMesh = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
+  const v3 = useMemo(() => new THREE.Vector3(), []);
   const { camera } = useThree();
 
   const seeds = useMemo<Seed[]>(() =>
     Array.from({ length: COUNT }, () => {
       const kind = rollKind();
       const y = BOTTOM_Y + Math.random() * (TOP_Y - BOTTOM_Y);
-      return { x: (Math.random() - 0.5) * 2 * FIELD_X, z: (Math.random() - 0.5) * 2 * FIELD_Z, y, vy: 1.3 + Math.random() * 1.4, kind, caught: kind !== 0 && y <= 0 && Math.random() < 0.5, caughtAt: 0, decided: y <= 0 };
+      return { x: (Math.random() - 0.5) * 2 * FIELD_X, z: (Math.random() - 0.5) * 2 * FIELD_Z, y, vy: 1.3 + Math.random() * 1.4, kind, caught: kind !== 0 && y <= 0 && Math.random() < 0.5, caughtAt: 0, decided: y <= 0, ox: 0, oz: 0 };
     }), []);
 
   // swarm cells: a grid on the sieve plane that "verifies" (fills green) as you descend
@@ -76,13 +79,15 @@ function Scene({ progress, reduce }: { progress: { current: number }; reduce: bo
 
   const respawn = (s: Seed) => {
     s.y = TOP_Y + Math.random() * 1.8; s.x = (Math.random() - 0.5) * 2 * FIELD_X; s.z = (Math.random() - 0.5) * 2 * FIELD_Z;
-    s.vy = 1.3 + Math.random() * 1.4; s.kind = rollKind(); s.caught = false; s.decided = false; s.caughtAt = 0;
+    s.vy = 1.3 + Math.random() * 1.4; s.kind = rollKind(); s.caught = false; s.decided = false; s.caughtAt = 0; s.ox = 0; s.oz = 0;
   };
 
   useFrame((state, delta) => {
     const p = progress.current;
     const t = state.clock.elapsedTime;
     const dt = Math.min(delta, 0.05);
+    const ptr = pointer.current;
+    const aspect = (camera as THREE.PerspectiveCamera).aspect || 1;
 
     // camera descends through the beats, then pulls back to settle
     camera.position.set(
@@ -104,8 +109,28 @@ function Scene({ progress, reduce }: { progress: { current: number }; reduce: bo
             if (s.y < BOTTOM_Y) respawn(s);
           } else if (t - s.caughtAt > CAUGHT_HOLD) respawn(s);
         }
-        const px = s.caught ? Math.round(s.x / HOLE) * HOLE : s.x;
-        const pz = s.caught ? Math.round(s.z / HOLE) * HOLE : s.z;
+        // cursor repulsion: falling seeds part around the pointer (screen-space)
+        let tox = 0, toz = 0;
+        if (ptr.active && !s.caught && !reduce) {
+          v3.set(s.x, s.y, s.z).project(camera);
+          if (v3.z < 1) {
+            const dx = (v3.x - ptr.x) * aspect;
+            const dy = v3.y - ptr.y;
+            const d = Math.hypot(dx, dy);
+            const R = 0.34;
+            if (d < R) {
+              const f = (1 - d / R) * 1.15;
+              const inv = 1 / (d || 0.001);
+              tox = (v3.x - ptr.x) * aspect * inv * f;
+              toz = -(v3.y - ptr.y) * inv * f;
+            }
+          }
+        }
+        s.ox += (tox - s.ox) * 0.14;
+        s.oz += (toz - s.oz) * 0.14;
+
+        const px = (s.caught ? Math.round(s.x / HOLE) * HOLE : s.x) + s.ox;
+        const pz = (s.caught ? Math.round(s.z / HOLE) * HOLE : s.z) + s.oz;
         dummy.position.set(px, s.y, pz);
         let sc = 0.075;
         if (s.caught) sc = 0.11 * (1 + 0.12 * Math.sin(t * 5 + i)) * Math.min(1, (t - s.caughtAt) * 6);
@@ -161,6 +186,7 @@ export function ScrollExperience() {
   const dotRefs = useRef<(HTMLDivElement | null)[]>([]);
   const hintRef = useRef<HTMLDivElement>(null);
   const progress = useRef(0);
+  const pointer = useRef<Pointer>({ x: 0, y: 0, active: false });
   const [reduce, setReduce] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -170,6 +196,20 @@ export function ScrollExperience() {
     setMobile(window.innerWidth < 820);
     setMounted(true);
   }, []);
+
+  // pointer in normalized device coords → the 3D seeds part around the cursor
+  useEffect(() => {
+    if (!mounted || reduce || mobile) return;
+    const onMove = (e: PointerEvent) => {
+      pointer.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointer.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      pointer.current.active = true;
+    };
+    const onLeave = () => { pointer.current.active = false; };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerout", onLeave, { passive: true });
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerout", onLeave); };
+  }, [mounted, reduce, mobile]);
 
   // scroll → progress (0..1 across the tall section) + beat opacities. rAF-throttled.
   useEffect(() => {
@@ -248,7 +288,7 @@ export function ScrollExperience() {
           <ambientLight intensity={0.85} />
           <directionalLight position={[5, 8, 4]} intensity={1.0} />
           <directionalLight position={[-5, 2, -5]} intensity={0.3} color="#bcd6f2" />
-          <Scene progress={progress} reduce={reduce} />
+          <Scene progress={progress} pointer={pointer} reduce={reduce} />
         </Canvas>
 
         {/* beats — each a distinct translucent card that slides through as you scroll */}
@@ -273,8 +313,8 @@ export function ScrollExperience() {
                 <p className="mt-3.5 text-[16px] sm:text-[17px] text-[var(--text-dim)] max-w-[40ch]">{b.p}</p>
                 {i === BEATS.length - 1 && (
                   <div className="mt-6 flex gap-3 flex-wrap">
-                    <Link href="/contribute" className="sheen font-medium text-[14px] px-5 py-[11px] text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link>
-                    <Link href="/bounties" className="font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)]">Post a search</Link>
+                    <Magnetic><Link href="/contribute" data-cursor className="sheen inline-block font-medium text-[14px] px-5 py-[11px] text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link></Magnetic>
+                    <Magnetic><Link href="/bounties" data-cursor className="inline-block font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)]">Post a search</Link></Magnetic>
                   </div>
                 )}
               </div>
