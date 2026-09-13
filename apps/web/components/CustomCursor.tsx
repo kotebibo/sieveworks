@@ -56,7 +56,7 @@ export function CustomCursor() {
   if (!on) return null;
   return (
     <>
-      <div ref={ring} className="cursor-ring" aria-hidden />
+      <div ref={ring} className="cursor-ring" aria-hidden><span className="cursor-ring-vis" /></div>
       <div ref={dot} className="cursor-dot" aria-hidden />
     </>
   );

@@ -235,15 +235,17 @@ html.lenis, html.lenis body { height: auto; }
    the ring is mounted; text fields keep their I-beam. */
 .has-custom-cursor, .has-custom-cursor * { cursor: none !important; }
 .has-custom-cursor input, .has-custom-cursor textarea, .has-custom-cursor select, .has-custom-cursor [contenteditable="true"] { cursor: auto !important; }
-.cursor-dot, .cursor-ring { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9999; border-radius: 9999px; will-change: transform; }
-.cursor-dot { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; background: var(--accent); }
-.cursor-ring {
-  width: 34px; height: 34px; margin: -17px 0 0 -17px;
+.cursor-dot, .cursor-ring { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 9999; will-change: transform; }
+.cursor-dot { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 9999px; background: var(--accent); }
+/* wrapper does the instant per-frame translate; inner disc does the transitioned
+   scale — so growing over links never animates layout (only transform). */
+.cursor-ring-vis {
+  display: block; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 9999px;
   border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  transition: width 0.24s ease, height 0.24s ease, margin 0.24s ease, background 0.24s ease, border-color 0.24s ease;
+  transition: transform 0.24s ease, background 0.24s ease, border-color 0.24s ease;
 }
-.cursor-ring.cursor-hot { width: 56px; height: 56px; margin: -28px 0 0 -28px; background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); }
-.cursor-ring.cursor-press { width: 26px; height: 26px; margin: -13px 0 0 -13px; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.cursor-ring.cursor-hot .cursor-ring-vis { transform: scale(1.65); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); }
+.cursor-ring.cursor-press .cursor-ring-vis { transform: scale(0.76); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
 /* Intro curtain (components/IntroReveal.tsx). */
 .intro-curtain {
