@@ -10,7 +10,7 @@
           "apps/web/app/globals.css"
         ],
         "createdAt": "2026-08-29T18:08:37.142Z",
-        "reason": "sanctioned exception: sieve mesh is the product's own metaphor (Sieveworks), a measurement-surface grid per the rule's carve-out; kept intentionally in the first impeccable audit (user-approved design direction)"
+        "reason": "sanctioned: faint sieve-mesh body background IS the Sieveworks product metaphor (Daylight Arcade brand decision); already inline-disabled at globals.css:76"
       }
     ]
   }

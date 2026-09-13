@@ -29,19 +29,18 @@ export default function Modules() {
       <h1 className="font-display font-extrabold text-[clamp(28px,3.6vw,40px)] leading-[1.04] tracking-[-0.03em]">
         Bring your own search.
       </h1>
-      <p className="mt-3 text-[15.5px] text-[var(--text-dim)] max-w-[62ch]">
-        A worker module defines what a search means: how to score one candidate in a numeric space.
-        It's any WebAssembly module exporting three functions:{" "}
+      <p className="mt-3 text-[15.5px] text-[var(--text-dim)] max-w-[60ch]">
+        A module defines what a search means — how to score one candidate. It's any WebAssembly module
+        exporting{" "}
         <span className="num text-[var(--text)]">evaluate_range</span>,{" "}
-        <span className="num text-[var(--text)]">evaluate_seed</span>,{" "}
-        <span className="num text-[var(--text)]">spec_version</span>. Upload one and the coordinator
-        content-hashes it, runs a conformance gate, and it's ready to fund bounties against. Publish it
-        for the community, or keep it <span className="text-[var(--text)]">private</span>: visible only to you until you post a bounty with it.
+        <span className="num text-[var(--text)]">evaluate_seed</span>, and{" "}
+        <span className="num text-[var(--text)]">spec_version</span>. Upload one; the coordinator
+        content-hashes it, runs a conformance gate, and it's ready to fund bounties — public, or{" "}
+        <span className="text-[var(--text)]">private</span> until you post with it.
       </p>
-      <p className="mt-2.5 text-[13.5px] text-[var(--text-faint)] max-w-[62ch]">
-        Work is dealt out in <span className="text-[var(--text-dim)]">chunks</span>: a chunk is a unit
-        of compute, a fixed range of candidates one contributor evaluates and gets paid for. Nothing
-        game-specific about it.
+      <p className="mt-2.5 text-[14px] text-[var(--text-dim)] max-w-[62ch]">
+        Work is dealt out in <span className="text-[var(--text)]">chunks</span> — a fixed range of
+        candidates one contributor evaluates and gets paid for.
       </p>
 
       <UploadPanel onDone={refresh} />

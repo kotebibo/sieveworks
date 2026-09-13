@@ -353,14 +353,14 @@ function NewBountyInner() {
             <Row k="total budget (locked on post)" v={priced ? `◎${solStr(econ.budgetLamports.toString())}` : "—"} accent />
           </dl>
           )}
-          <p className="mt-4 text-[11px] text-[var(--text-faint)] leading-relaxed">
+          <p className="mt-4 text-[12.5px] text-[var(--text-dim)] leading-relaxed">
             {isTraining
-              ? "Posting locks the budget in the job's on-chain escrow (devnet). Contributors train the model in their browser, get paid per verified chunk of generations, and every training segment is audited by recomputing a random checkpoint. You reclaim whatever's unspent."
+              ? "Posting locks the budget in the job's on-chain escrow (devnet). Contributors train in their browser, paid per verified chunk; each segment is audited by recomputing a random checkpoint. Reclaim whatever's unspent."
               : isPrize
-              ? "Posting opens your wallet to lock the prize in the job's on-chain escrow (devnet). Anyone can train and submit; every submission is re-verified by one deterministic evaluation, and the best verified score above the threshold at the deadline claims the prize."
+              ? "Posting locks the prize in the job's on-chain escrow (devnet). Anyone can submit; every entry is re-verified, and the best score above the threshold at the deadline wins."
               : priced
-              ? "Posting opens your wallet to lock the budget in the job's on-chain escrow (devnet). Contributors are paid per verified chunk from it; you can reclaim whatever's unspent by closing the job."
-              : "Sieveworks sells targeted search, not exhaustive: a budget buys coverage of a chosen region. Set a price per chunk to fund this bounty on-chain (devnet)."}
+              ? "Posting locks the budget in the job's on-chain escrow (devnet). Contributors are paid per verified chunk; reclaim whatever's unspent by closing the job."
+              : "A budget buys coverage of a chosen region — targeted search, not exhaustive. Set a price per chunk to fund this bounty on-chain (devnet)."}
           </p>
         </div>
       </div>

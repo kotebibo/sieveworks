@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Reveal } from "@/components/Reveal";
 
 export const metadata: Metadata = {
   title: "How it works",
@@ -9,15 +10,16 @@ export const metadata: Metadata = {
 
 export default function HowItWorks() {
   return (
-    <div className="mx-auto max-w-[820px] px-5 sm:px-7 py-14">
-      <div className="barlabel mb-5" style={{ color: "var(--accent)", letterSpacing: "0.14em" }}>How it works</div>
-      <h1 className="font-display font-extrabold text-[clamp(30px,4vw,46px)] leading-[1.02] tracking-[-0.03em]">
-        Hard to find, easy to check.
-      </h1>
-      <p className="mt-4 text-[16.5px] text-[var(--text-dim)] max-w-[52ch]">
-        Sieveworks serves one shape of problem: a compact input, a deterministic score, and a
-        witness anyone can re-check in microseconds. Everything below follows from that.
-      </p>
+    <div className="mx-auto max-w-[820px] px-5 sm:px-7 py-16 sm:py-20">
+      <Reveal variant="up">
+        <h1 className="font-display font-extrabold text-[clamp(32px,4.4vw,50px)] leading-[1.02] tracking-[-0.03em]">
+          Hard to find, easy to check.
+        </h1>
+        <p className="mt-4 text-[16.5px] text-[var(--text-dim)] max-w-[52ch]">
+          Sieveworks serves one shape of problem: a compact input, a deterministic score, and a
+          witness anyone can re-check in microseconds. Everything below follows from that.
+        </p>
+      </Reveal>
 
       <Block n="01" title="Extremum reframing">
         A job never asks a yes/no question. It asks: <em>what is the highest-scoring input in this
@@ -47,31 +49,37 @@ export default function HowItWorks() {
         permanently attributed to whoever found it — credit no one can take back.
       </Block>
 
-      <div className="mt-10 panel ticked p-5">
-        <div className="barlabel mb-2">The number that matters</div>
-        <p className="text-[15px] text-[var(--text-dim)]">
-          Verification costs about <b className="text-[var(--text)] font-semibold">0.9% of the work it
-          checks</b> at a 10% audit rate — and roughly 9% even if you audit <em>every</em> chunk. The
-          industry alternative, running everything two or three times, costs 200%.
-        </p>
-      </div>
+      <Reveal variant="scale">
+        <div className="mt-14 panel ticked p-6 sm:p-7 grid sm:grid-cols-[auto_1fr] gap-5 sm:gap-7 items-center">
+          <div className="num font-semibold tracking-[-0.03em] leading-none text-[clamp(48px,8vw,72px)]" style={{ color: "var(--accent)" }}>0.9%</div>
+          <p className="text-[16px] text-[var(--text-dim)] leading-relaxed">
+            What verification costs — <b className="text-[var(--text)] font-semibold">0.9% of the work it checks</b> at a
+            10% audit rate, roughly 9% even if you audit <em>every</em> chunk. The industry alternative — running
+            everything two or three times — costs <span className="num text-[var(--text)]">200%</span>.
+          </p>
+        </div>
+      </Reveal>
 
-      <div className="mt-8 flex gap-3">
-        <Link href="/contribute" className="font-medium text-[14px] px-5 py-[11px] text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link>
-        <Link href="/docs" className="font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)]">Read the docs</Link>
-      </div>
+      <Reveal variant="up">
+        <div className="mt-10 flex gap-3">
+          <Link href="/contribute" className="font-medium text-[14px] px-5 py-[11px] text-[var(--bg)]" style={{ background: "var(--accent)" }}>Start contributing</Link>
+          <Link href="/docs" className="font-medium text-[14px] px-5 py-[11px] border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)]">Read the docs</Link>
+        </div>
+      </Reveal>
     </div>
   );
 }
 
 function Block({ n, title, children }: { n: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-10 grid grid-cols-[auto_1fr] gap-5">
-      <div className="num text-[var(--accent)] text-[13px] pt-1">{n}</div>
-      <div>
-        <h2 className="font-display font-bold text-[20px] tracking-[-0.02em] mb-2">{title}</h2>
-        <p className="text-[15px] text-[var(--text-dim)] leading-relaxed">{children}</p>
-      </div>
-    </section>
+    <Reveal variant="up" className="mt-10">
+      <section className="grid grid-cols-[auto_1fr] gap-5">
+        <div className="num text-[var(--accent)] text-[13px] pt-1">{n}</div>
+        <div>
+          <h2 className="font-display font-bold text-[20px] tracking-[-0.02em] mb-2">{title}</h2>
+          <p className="text-[15px] text-[var(--text-dim)] leading-relaxed">{children}</p>
+        </div>
+      </section>
+    </Reveal>
   );
 }
