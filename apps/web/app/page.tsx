@@ -59,24 +59,10 @@ export default function Home() {
       <ScrollExperience />
 
       <div className="mx-auto max-w-[1120px] px-5 sm:px-7">
-        {/* ============ trust strip (a section, in-flow) ============ */}
-        <Reveal variant="fade">
-          <section className="flex flex-wrap items-center gap-x-8 gap-y-3 border-y border-[var(--border)] py-5">
-            {TRUST.map((t) => (
-              <Link key={t.k} href={t.href} {...(t.href.startsWith("http") ? { target: "_blank", rel: "noreferrer" } : {})}
-                className="group flex items-center gap-2.5 text-[13.5px] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--verified)" }} />
-                {t.k}
-              </Link>
-            ))}
-          </section>
-        </Reveal>
-
         {/* ============ 2 · the reframe (why it can be trusted) ============ */}
         <section className="py-24 sm:py-32">
           <Reveal variant="up">
-            <div className="barlabel text-[var(--accent)]">The idea</div>
-            <h2 className="mt-3 font-display font-bold text-[clamp(28px,4.2vw,46px)] leading-[1.04] tracking-[-0.03em] max-w-[18ch]">
+            <h2 className="font-display font-bold text-[clamp(28px,4.2vw,46px)] leading-[1.04] tracking-[-0.03em] max-w-[18ch]">
               Pay a stranger to compute — and <em className="not-italic text-[var(--accent)]">know</em> they didn't lie.
             </h2>
           </Reveal>
@@ -102,8 +88,7 @@ export default function Home() {
         {/* ============ 3 · verification — four ways a lie dies ============ */}
         <section className="py-20 sm:py-24 border-t border-[var(--border)]">
           <Reveal variant="up">
-            <div className="barlabel text-[var(--accent)]">The proof</div>
-            <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Four ways a lie dies.</h2>
+            <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Four ways a lie dies.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[52ch]">
               Stacked together, they make cheating pointless — for about <span className="text-[var(--text)] num">0.9%</span> extra compute, not 200%.
             </p>
@@ -128,8 +113,7 @@ export default function Home() {
         {/* ============ 4 · live proof — it's real right now ============ */}
         <section className="py-20 sm:py-24 border-t border-[var(--border)]">
           <Reveal variant="up">
-            <div className="barlabel text-[var(--accent)]">Live right now</div>
-            <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Not a mockup. A running network.</h2>
+            <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Not a mockup. A running network.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[54ch]">
               Left: a real bounty, covered by real contributors. Right: a network teaching itself to fly, live in your browser.
             </p>
@@ -172,8 +156,7 @@ export default function Home() {
         {/* ============ 5 · the money, settled on Solana ============ */}
         <section className="py-20 sm:py-24 border-t border-[var(--border)]">
           <Reveal variant="up">
-            <div className="barlabel text-[var(--accent)]">The money</div>
-            <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Real budgets, settled on Solana.</h2>
+            <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Real budgets, settled on Solana.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[54ch]">
               No trust in us required — the escrow, the records, and the payouts all live on-chain.
             </p>
@@ -203,8 +186,7 @@ export default function Home() {
         <section className="py-20 sm:py-24 border-t border-[var(--border)]">
           <div className="grid gap-8 md:grid-cols-2 md:items-center">
             <Reveal variant="left">
-              <div className="barlabel text-[var(--accent)]">The platform</div>
-              <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em] max-w-[16ch]">One search today. Any search tomorrow.</h2>
+              <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em] max-w-[16ch]">One search today. Any search tomorrow.</h2>
             </Reveal>
             <Reveal variant="right" delay={80}>
               <p className="text-[16.5px] leading-[1.5] text-[var(--text-dim)]">
@@ -270,13 +252,6 @@ const FLOW = [
   { t: "Funded", d: "A bounty locks its budget in an on-chain escrow — provably there before any work starts." },
   { t: "Attested", d: "Every record find is written to Solana: a permanent record of who found what." },
   { t: "Claimed", d: "Workers withdraw with a co-signed voucher — replay-proof, no double-spends." },
-];
-
-const TRUST = [
-  { k: "Live on Solana devnet", href: "https://explorer.solana.com/address/BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf?cluster=devnet" },
-  { k: "Open source", href: "https://github.com/konstantinesolana/sieveworks" },
-  { k: "Browser-native · no install", href: "/contribute" },
-  { k: "Under 1% verify overhead", href: "/how-it-works" },
 ];
 
 function Stat({ v, n, l, accent }: { v?: string; n?: number; l: string; accent?: boolean }) {
