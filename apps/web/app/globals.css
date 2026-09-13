@@ -18,8 +18,8 @@
   --border: #E2E7EF;
   --border-bright: #C9D3E0;
   --text: #1E2430;
-  --text-dim: #5A6478;
-  --text-faint: #6E7889;  /* AA on bg and panel */
+  --text-dim: #3D4557;    /* secondary/body — deep ink-slate, not washed grey */
+  --text-faint: #66708A;  /* AA on bg and panel */
   --accent: #2F79CE;     /* sky — interactive voice (AA on white) */
   --accent-2: #7FB0E8;
   --accent-dim: #245FA3;
@@ -41,7 +41,7 @@
   --border: #2D3A52;
   --border-bright: #3C4C6A;
   --text: #EDF1F7;
-  --text-dim: #97A3B9;
+  --text-dim: #B4BFD2;    /* secondary/body — clean cool-grey, not muddy */
   --text-faint: #8894AA;
   --accent: #5B9EE8;
   --accent-2: #2F79CE;
@@ -271,6 +271,33 @@ html.lenis, html.lenis body { height: auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .intro-glyph, .intro-word, .intro-line::after, .intro-out { animation: none; }
+}
+
+/* Static-hero sieve motif (components/HeroFallback.tsx) — pure CSS so mobile
+   and the pre-3D first paint aren't flat. Seeds fall; some pass through the
+   sieve line, some catch and pop. */
+.hero-sieve { position: relative; height: 150px; max-width: 440px; margin-top: 42px; }
+.hero-sieve .hs-line { position: absolute; left: 0; right: 0; top: 104px; height: 2px; background: linear-gradient(90deg, transparent, var(--border-bright) 12%, var(--border-bright) 88%, transparent); }
+.hs-drop { position: absolute; top: 0; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 9999px; opacity: 0; }
+.hs-pass { animation: hs-pass 2.6s cubic-bezier(0.45, 0, 0.7, 1) infinite; }
+.hs-catch { animation: hs-catch 2.9s cubic-bezier(0.45, 0, 0.7, 1) infinite; }
+@keyframes hs-pass {
+  0% { transform: translateY(-8px); opacity: 0; }
+  12% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: translateY(150px); opacity: 0; }
+}
+@keyframes hs-catch {
+  0% { transform: translateY(-8px) scale(1); opacity: 0; }
+  12% { opacity: 1; }
+  50% { transform: translateY(100px) scale(1); opacity: 1; }
+  60% { transform: translateY(100px) scale(1.55); }
+  74% { transform: translateY(100px) scale(1); }
+  92% { transform: translateY(100px) scale(1); opacity: 1; }
+  100% { transform: translateY(100px) scale(0.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hs-drop { animation: none; opacity: 0.55; transform: translateY(100px); }
 }
 
 /* ---- live flappy showcase (homepage) ---- */

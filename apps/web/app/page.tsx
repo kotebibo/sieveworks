@@ -59,6 +59,19 @@ export default function Home() {
       <ScrollExperience />
 
       <div className="mx-auto max-w-[1120px] px-5 sm:px-7">
+        {/* ============ trust strip (a section, in-flow) ============ */}
+        <Reveal variant="fade">
+          <section className="flex flex-wrap items-center gap-x-8 gap-y-3 border-y border-[var(--border)] py-5">
+            {TRUST.map((t) => (
+              <Link key={t.k} href={t.href} {...(t.href.startsWith("http") ? { target: "_blank", rel: "noreferrer" } : {})}
+                className="group flex items-center gap-2.5 text-[13.5px] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--verified)" }} />
+                {t.k}
+              </Link>
+            ))}
+          </section>
+        </Reveal>
+
         {/* ============ 2 · the reframe (why it can be trusted) ============ */}
         <section className="py-24 sm:py-32">
           <Reveal variant="up">
@@ -71,17 +84,16 @@ export default function Home() {
           <div className="mt-12 grid gap-5 md:grid-cols-2">
             <Reveal variant="left" className="panel p-6 sm:p-7">
               <div className="num text-[13px] text-[var(--text-faint)]">The old way</div>
-              <p className="mt-3 text-[17px] leading-[1.55] text-[var(--text-dim)]">
-                Ask <span className="text-[var(--text)]">“did you find it?”</span> — and a lie costs nothing to tell. So everyone runs the work
-                two or three times and compares the answers. The buyer pays <span className="text-[var(--text)] num">200%+</span> for the privilege of not being cheated.
+              <p className="mt-3 text-[16.5px] leading-[1.5] text-[var(--text-dim)]">
+                Ask <span className="text-[var(--text)]">“did you find it?”</span> and a lie is free to tell. So everyone runs the work
+                2–3× and compares — the buyer pays <span className="text-[var(--text)] num">200%+</span> just to not get cheated.
               </p>
             </Reveal>
             <Reveal variant="right" delay={90} className="panel panel-bright p-6 sm:p-7">
               <div className="num text-[13px]" style={{ color: "var(--accent)" }}>The Sieveworks way</div>
-              <p className="mt-3 text-[17px] leading-[1.55] text-[var(--text)]">
-                Change the question to <span style={{ color: "var(--accent)" }}>“what's the best result in this slice?”</span> Now the answer carries a
-                <span className="font-semibold"> witness</span> — a single seed that must reproduce the score on demand. Nothing to fake, nothing to out-vote.
-                A lie is caught in <span className="num">microseconds</span>.
+              <p className="mt-3 text-[16.5px] leading-[1.5] text-[var(--text)]">
+                Ask <span style={{ color: "var(--accent)" }}>“what's the best in this slice?”</span> The answer carries a
+                <span className="font-semibold"> witness</span> — one seed that must reproduce the score on demand. Nothing to fake; a lie dies in <span className="num">microseconds</span>.
               </p>
             </Reveal>
           </div>
@@ -119,7 +131,7 @@ export default function Home() {
             <div className="barlabel text-[var(--accent)]">Live right now</div>
             <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Not a mockup. A running network.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[54ch]">
-              A real bounty being covered by real contributors on the left; a neural network teaching itself to fly, trained live in your browser, on the right.
+              Left: a real bounty, covered by real contributors. Right: a network teaching itself to fly, live in your browser.
             </p>
           </Reveal>
 
@@ -163,7 +175,7 @@ export default function Home() {
             <div className="barlabel text-[var(--accent)]">The money</div>
             <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Real budgets, settled on Solana.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[54ch]">
-              No trust in us required. The escrow, the record of who found what, and the payout all live on-chain.
+              No trust in us required — the escrow, the records, and the payouts all live on-chain.
             </p>
           </Reveal>
 
@@ -195,10 +207,9 @@ export default function Home() {
               <h2 className="mt-3 font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em] max-w-[16ch]">One search today. Any search tomorrow.</h2>
             </Reveal>
             <Reveal variant="right" delay={80}>
-              <p className="text-[17px] leading-[1.55] text-[var(--text-dim)]">
+              <p className="text-[16.5px] leading-[1.5] text-[var(--text-dim)]">
                 A <span className="text-[var(--text)]">module</span> is a tiny function that scores one candidate. Prime hunts, protein folds, model training,
-                render farms — anything shaped like <span className="text-[var(--text)]">“find the best across a huge space”</span> runs on Sieveworks the moment
-                its module exists. Write your own, or run one the community already shipped.
+                render farms — anything shaped like <span className="text-[var(--text)]">“find the best across a huge space”</span> runs here. Write one, or use the community's.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/modules" className="font-medium text-[14px] px-5 py-2.5 border border-[var(--border-bright)] hover:border-[var(--text)] transition-colors">Browse modules</Link>
@@ -249,16 +260,23 @@ export default function Home() {
 }
 
 const LAYERS = [
-  { t: "Witness recheck", d: "The winning seed is re-run against the module. Score doesn't match? Rejected on the spot — about 0.4ms." },
-  { t: "Honeypots", d: "Traps with known answers are salted into the work. Miss one and every chunk you sent is thrown out." },
-  { t: "Merkle challenge", d: "Random buckets are recomputed against the root you committed. A doctored batch can't survive the audit." },
-  { t: "Stake & slash", d: "Workers post a stake on-chain. Get caught cheating and it burns — lying costs more than it pays." },
+  { t: "Witness recheck", d: "The winning seed is re-run. Wrong score? Rejected — in ~0.4ms." },
+  { t: "Honeypots", d: "Traps with known answers. Miss one and all your work is voided." },
+  { t: "Merkle challenge", d: "Random buckets recomputed against the root you committed." },
+  { t: "Stake & slash", d: "Cheat and your on-chain stake burns. Lying costs more than it pays." },
 ];
 
 const FLOW = [
-  { t: "Funded", d: "Posting a bounty locks its budget in an escrow account on-chain. The money is provably there before any work leases." },
-  { t: "Attested", d: "Every record-breaking find is written to Solana as a permanent, timestamped transaction — who found what, forever." },
-  { t: "Claimed", d: "Workers withdraw earnings with a co-signed voucher. The math is replay-proof; nobody can double-spend a payout." },
+  { t: "Funded", d: "A bounty locks its budget in an on-chain escrow — provably there before any work starts." },
+  { t: "Attested", d: "Every record find is written to Solana: a permanent record of who found what." },
+  { t: "Claimed", d: "Workers withdraw with a co-signed voucher — replay-proof, no double-spends." },
+];
+
+const TRUST = [
+  { k: "Live on Solana devnet", href: "https://explorer.solana.com/address/BPxLuXppjSMehhkibfRU646ZsrMMReFkMUKjmPuirWnf?cluster=devnet" },
+  { k: "Open source", href: "https://github.com/konstantinesolana/sieveworks" },
+  { k: "Browser-native · no install", href: "/contribute" },
+  { k: "Under 1% verify overhead", href: "/how-it-works" },
 ];
 
 function Stat({ v, n, l, accent }: { v?: string; n?: number; l: string; accent?: boolean }) {

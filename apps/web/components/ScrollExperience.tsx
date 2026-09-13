@@ -22,10 +22,10 @@ const FIELD_X = 5.6, FIELD_Z = 3.2, TOP_Y = 4.4, BOTTOM_Y = -4.2, HOLE = 0.55, C
 const FALL = new THREE.Color("#8FB4DC"), GREEN = new THREE.Color("#1E9E5C"), AMBER = new THREE.Color("#E08A2B");
 
 const BEATS = [
-  { h: "Pay strangers to compute.", p: "Fund a search; anyone runs a slice of it in a browser tab." },
-  { h: "Prove they did it.", p: "Every result is re-checked, not trusted — for about 0.9% overhead, not the 200% of running it three times." },
-  { h: "A browser tab is a worker.", p: "No install, no signup. Paid per verified chunk, the moment it clears." },
-  { h: "Settled on Solana.", p: "Every record attributed on-chain, permanently, to whoever found it first." },
+  { h: "Rent the world's idle compute.", p: "Post a huge search; strangers run slices of it in a browser tab, for pay." },
+  { h: "Prove they didn't fake it.", p: "Every result is re-checked, not trusted — for ~0.9% overhead, not 200%." },
+  { h: "A browser tab is a worker.", p: "No install, no signup. Paid per verified chunk." },
+  { h: "Settled on Solana.", p: "Every find recorded on-chain, to whoever got there first." },
 ];
 
 function lerp(a: number, b: number, t: number) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
