@@ -432,3 +432,32 @@ side, in the NEW sweep code (both fixable, flag OFF until then):
 
 Prod: flag OFF, training on the probabilistic path. Module + on-chain scaffold
 are correct; only the sweep's param-plumbing + reject-state need fixing.
+
+---
+
+## VERIFIED (Sep 13) — the sweep replay is CORRECT; the "blocker" was the stale image
+
+Built an offline repro (`replayTrainingChunk` logic, in-process) and ran it
+against **4 real honest training chunks pulled from prod** (jobs 497db170,
+2a2f087a, 8722c5e5, ae0d047e; buckets_count=32; state len 8488 = EVO_HDR 168 +
+64×130 — the SAME layout the E2E "blocker" was on):
+
+- All 4: replay final == delivered final, **byte-for-byte** (firstDivergentByte
+  = -1). `prize_salt` arrives from `j.params` as a precise STRING (e.g.
+  "5295583835146308217"), `JSON.stringify(row.params)` preserves it, and the
+  seed (`lineageSeed32(job_id, lineage_id)`) + origin (`init_state`) reproduce
+  exactly. `paramsJson` byte-flow through the bucketPool thread is a base64
+  round-trip (identity), so the thread path cannot diverge from this.
+
+Conclusion: **bug #1 ("sweep replay rejects honest chunks") does NOT reproduce**
+with the current code + real data. It was the stale-Docker-image artifact the
+Sep-11 note itself flagged (the `[fp-debug]` log never landed). Bug #2
+(reject-storm) is already handled — `confirmTrainingChunks` reconciles on-chain
+`status==2` to a DB `rejected` before any fresh reject, and the reject path
+clears leases + quarantines after REJECT_CAP (matches commit c101d1e).
+
+**NEXT to actually ship Tier 1:** a FRESH `--no-cache` coordinator deploy with
+`TRAINING_FRAUD_PROOF=true`, then a live devnet E2E — honest chunk confirms
+after the window (150 slots ≈ 60s), fabricated chunk → coordinator opens
+reject → slash + re-pool, `latest_state` never poisoned. This flips a prod flag
+that slashes SOL stakes and posts on-chain rejects, so it needs an explicit go.
