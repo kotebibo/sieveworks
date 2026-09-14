@@ -121,6 +121,21 @@ while (completed < maxChunks) {
     const wire = digest16ToWire(bucketDigest16(salt, state));
     leaves.push({ index: k, maxScore: BigInt(wire.score), maxSeed: BigInt(wire.seed) });
   }
+  // --cheat divergent-final: keep the origin honest (so the on-chain anchor
+  // check digest(S_0)==confirmed passes) and commit a self-consistent chain,
+  // but deliver a CORRUPTED final state with a matching last leaf. Passes
+  // submission + delivery (internally consistent); only the window sweep's
+  // full re-run from the true origin catches it — the exact fraud Spec 03b
+  // Tier 1 is built to prevent (audit finding #6).
+  let deliverState = state;
+  if (cheat === "divergent-final") {
+    const corrupted = new Uint8Array(state);
+    corrupted[0] ^= 0xff; // any real byte change → true replay diverges
+    const wire = digest16ToWire(bucketDigest16(salt, corrupted));
+    leaves[leaves.length - 1] = { index: leaves.length - 1, maxScore: BigInt(wire.score), maxSeed: BigInt(wire.seed) };
+    deliverState = corrupted;
+  }
+
   const durationMs = Date.now() - t0;
   const root = toHex(merkleRoot(leaves.map(hashLeaf)));
 
@@ -184,7 +199,7 @@ while (completed < maxChunks) {
   const put = await api<{ ok?: boolean; error?: string }>(
     `/v1/results/${verdict.result_id}/outputs`,
     {
-      state_b64: Buffer.from(state).toString("base64"),
+      state_b64: Buffer.from(deliverState).toString("base64"),
       last_leaf: { index: lastIdx, max_score: leaves[lastIdx]!.maxScore.toString(), max_seed: leaves[lastIdx]!.maxSeed.toString() },
       proof: merkleProof(leaves.map(hashLeaf), lastIdx).map(toHex),
     },

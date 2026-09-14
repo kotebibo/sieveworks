@@ -461,3 +461,49 @@ clears leases + quarantines after REJECT_CAP (matches commit c101d1e).
 after the window (150 slots ≈ 60s), fabricated chunk → coordinator opens
 reject → slash + re-pool, `latest_state` never poisoned. This flips a prod flag
 that slashes SOL stakes and posts on-chain rejects, so it needs an explicit go.
+
+---
+
+## E2E PASSED on devnet (Sep 13) — both paths proven; two real bugs fixed; a CPU wall found
+
+Ran the full flag-on E2E against the live Fly coordinator + devnet. **Both
+paths work end-to-end on-chain:**
+
+- **Honest** (jobs 497db170 chunk 6681a50f, and fresh job 10c5328d chunk
+  e83738e5): delivery fires `assert_chunk` (ChunkAssertion PDA, 150-slot
+  window) → chunk parks `awaiting_confirm` → after the window the sweep re-runs
+  from the anchored origin, matches → `confirm_chunk` advances the
+  TrainingLineage anchor (gensConfirmed 0 → 8192, confirmed_state_digest =
+  delivered final) and closes the assertion → chunk `accepted`. Verified anchor
+  advance + assertion-closed on devnet for BOTH jobs.
+- **Fabricated** (job 9631d2f0, new `train.ts --cheat divergent-final`: honest
+  origin so the anchor check passes, self-consistent commitment, but a
+  corrupted final delivered): passes submission + delivery, parks → sweep's true
+  re-run diverges → `reject_chunk` (assertion closed, fraud transcript on-chain)
+  → chunk re-pooled (`pending`, attempts=1) → `result_rejections` {fraud_proof:
+  true, slash:true, "window re-run diverged from the committed final state"}.
+  Crucially the lineage anchor stayed gensConfirmed=0 — **the poison never
+  became the origin.** (An actual on-chain stake burn additionally needs a
+  priced job with a staked worker; the reject/re-pool machinery is proven.)
+
+**Two real coordinator bugs fixed on the way (these were the Sep-11 "blocker"):**
+1. Sweep result-selection: `confirmTrainingChunks` joined `results` unfiltered,
+   so a chunk with a stale `failed` row (no output) alongside its real `passed`
+   row could pick the failed one → delivered=null → "cannot verify" forever, and
+   one-chunk-per-tick order let that single chunk STARVE the whole queue. Fixed:
+   select only the `passed` result that delivered a final state (commit 607…).
+2. `BUCKET_TIMEOUT_MS` too tight for this module class on the coordinator's
+   hardware (raised 8s → 30s via secret).
+
+**CPU wall (the honest operational finding):** a re-execution fraud proof is
+real CPU. On the coordinator's `shared-cpu-1x`/512MB, sustained re-execution
+exhausts burst credits and a bucket that runs ~1.4s elsewhere blows past 30s —
+honest chunks then never confirm. The E2E was completed by temporarily scaling
+to a dedicated CPU (`performance-1x`), then reverted. **To run Tier 1 in prod
+the coordinator must be sized for re-execution (dedicated CPU).** Until then the
+flag stays OFF and training runs the probabilistic path (unchanged for users).
+
+Prod state after this session: `TRAINING_FRAUD_PROOF=false`,
+`TRAINING_AUDIT_RATE_PCT=10`, `BUCKET_TIMEOUT_MS=30000`, VM back to
+`shared-cpu-1x`/512MB. Tier 1 is proven correct + ready; enabling it is now a
+VM-sizing decision, not a code one.
