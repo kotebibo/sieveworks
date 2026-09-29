@@ -172,7 +172,14 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      // Size the drawing buffer to the element's displayed box (DPR-aware) so
+      // the whole game is always visible, crisp, and never stretched/clipped.
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const bw = Math.max(1, Math.round(canvas.clientWidth * dpr));
+      const bh = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
       const W = canvas.width, H = canvas.height;
+      const k = H / WORLD_H; // uniform world→screen scale (container locked to 3:2 = 720:480)
       const sky = ctx.createLinearGradient(0, 0, 0, H);
       sky.addColorStop(0, "#C4E3FA");
       sky.addColorStop(1, "#9DCEF2");
@@ -180,8 +187,8 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
       ctx.fillRect(0, 0, W, H);
       if (!rep) {
         ctx.fillStyle = "#3A5A78";
-        ctx.font = "13px monospace";
-        ctx.fillText("start evolution to watch the whole generation fly", 24, H / 2);
+        ctx.font = `${Math.round(13 * k)}px monospace`;
+        ctx.fillText("start evolution to watch the whole generation fly", 24 * k, H / 2);
         return;
       }
       // Play the current flight to its end (longest survivor), plus a short
@@ -199,17 +206,17 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         return;
       }
       const t = Math.min(rep.tick, longest);
-      const scroll = t * PIPE_SPEED;
+      const scroll = t * PIPE_SPEED * k;
       // pipes (course is shared — read from the first trace)
       if (rep.pipesDv) {
         ctx.fillStyle = "#4EA362";
-        const gap = (PIPE_GAP * H) / WORLD_H / 2;
+        const gap = (PIPE_GAP * k) / 2;
         for (let i = 0; i < rep.nPipes; i++) {
-          const px = FIRST_PIPE_X + i * PIPE_SPACING - scroll;
-          if (px + PIPE_W < 0 || px > W) continue;
-          const gc = rep.pipesDv.getInt32(12 + i * 4, true) * (H / WORLD_H);
-          ctx.fillRect(px, 0, PIPE_W, gc - gap);
-          ctx.fillRect(px, gc + gap, PIPE_W, H - gc - gap);
+          const px = (FIRST_PIPE_X + i * PIPE_SPACING) * k - scroll;
+          if (px + PIPE_W * k < 0 || px > W) continue;
+          const gc = rep.pipesDv.getInt32(12 + i * 4, true) * k;
+          ctx.fillRect(px, 0, PIPE_W * k, gc - gap);
+          ctx.fillRect(px, gc + gap, PIPE_W * k, H - gc - gap);
         }
       }
       // the flock: fitness → hue (dim red 0deg → bright gold 48deg); dead
@@ -219,7 +226,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         const shownTick = alive ? t : tr.nTicks - 1;
         const yOff = 12 + rep.nPipes * 4 + shownTick * 4;
         if (yOff + 2 > tr.dv.byteLength || tr.nTicks === 0) continue;
-        const y = tr.dv.getInt16(yOff, true) * (H / WORLD_H);
+        const y = tr.dv.getInt16(yOff, true) * k;
         const fit = tr.score / rep.maxScore;
         // Daylight ramp: struggling birds run hot (red/orange), champions
         // go green — the owner-picked grading from the reference videos.
@@ -228,7 +235,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
         ctx.globalAlpha = alive ? 0.45 + 0.5 * fit : 0.12;
         ctx.fillStyle = `hsl(${hue} 72% ${light}%)`;
         ctx.beginPath();
-        ctx.arc(BIRD_X, y, alive && fit > 0.98 ? 7 : 5, 0, Math.PI * 2);
+        ctx.arc(BIRD_X * k, y, (alive && fit > 0.98 ? 7 : 5) * k, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
@@ -308,7 +315,7 @@ export default function TrainPage({ params }: { params: Promise<{ id: string }> 
 
       <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
         <Panel label="◢ generation replay — every bird, graded by fitness" right={best >= 0n ? `fitness ${best}` : "—"}>
-          <canvas ref={canvasRef} width={720} height={420} style={{ width: "100%", borderRadius: 12 }} />
+          <canvas ref={canvasRef} width={720} height={480} style={{ width: "100%", aspectRatio: "3 / 2", display: "block", borderRadius: 12, background: "#9DCEF2" }} />
           <div className="mt-3 flex items-center gap-3 flex-wrap">
             {!running ? (
               <Button variant="primary" onClick={() => void startEvolution()}>▶ {gen === 0 ? "Start evolution" : "Resume"}</Button>
