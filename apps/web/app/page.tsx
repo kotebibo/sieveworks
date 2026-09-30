@@ -9,6 +9,8 @@ import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/Magnetic";
 import { Hero } from "@/components/Hero";
+import { Defenses } from "@/components/Defenses";
+import { MoneyFlow } from "@/components/MoneyFlow";
 import { CountUp, fmt } from "@/components/ui";
 
 export default function Home() {
@@ -82,22 +84,7 @@ export default function Home() {
 
         {/* ============ 3 · verification — four ways a lie dies ============ */}
         <section className="py-20 sm:py-24 border-t border-[var(--border)]">
-          <Reveal variant="up">
-            <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Four ways a lie dies.</h2>
-            <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[52ch]">
-              Stacked together, they make cheating pointless — for about <span className="text-[var(--text)] num">0.9%</span> extra compute, not 200%.
-            </p>
-          </Reveal>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {LAYERS.map((l, i) => (
-              <Reveal key={l.t} variant="scale" delay={i * 80} className="panel p-5 h-full">
-                <div className="num text-[22px] font-semibold tracking-[-0.02em]" style={{ color: "var(--accent)" }}>{String(i + 1).padStart(2, "0")}</div>
-                <div className="mt-3 font-semibold text-[16px]">{l.t}</div>
-                <p className="mt-1.5 text-[14px] leading-[1.5] text-[var(--text-dim)]">{l.d}</p>
-              </Reveal>
-            ))}
-          </div>
+          <Defenses />
           <Reveal variant="fade" delay={120}>
             <p className="mt-6 text-[15px] text-[var(--text-dim)]">
               The full mechanism, with numbers, lives on <Link href="/how-it-works" className="text-[var(--accent)] hover:underline">how it works</Link>.
@@ -157,15 +144,9 @@ export default function Home() {
             </p>
           </Reveal>
 
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {FLOW.map((s, i) => (
-              <Reveal key={s.t} variant="up" delay={i * 90} className="relative panel p-6 h-full">
-                <div className="num text-[13px] text-[var(--text-faint)]">Step {i + 1}</div>
-                <div className="mt-2 font-semibold text-[17px]">{s.t}</div>
-                <p className="mt-1.5 text-[14.5px] leading-[1.5] text-[var(--text-dim)]">{s.d}</p>
-              </Reveal>
-            ))}
-          </div>
+          <Reveal variant="fade" delay={80}>
+            <MoneyFlow />
+          </Reveal>
           <Reveal variant="fade" delay={100}>
             <p className="mt-6 text-[15px] text-[var(--text-dim)]">
               Program live on{" "}
@@ -235,19 +216,6 @@ export default function Home() {
     </>
   );
 }
-
-const LAYERS = [
-  { t: "Witness recheck", d: "The winning seed is re-run. Wrong score? Rejected — in ~0.4ms." },
-  { t: "Honeypots", d: "Traps with known answers. Miss one and all your work is voided." },
-  { t: "Merkle challenge", d: "Random buckets recomputed against the root you committed." },
-  { t: "Stake & slash", d: "Cheat and your on-chain stake burns. Lying costs more than it pays." },
-];
-
-const FLOW = [
-  { t: "Funded", d: "A bounty locks its budget in an on-chain escrow — provably there before any work starts." },
-  { t: "Attested", d: "Every record find is written to Solana: a permanent record of who found what." },
-  { t: "Claimed", d: "Workers withdraw with a co-signed voucher — replay-proof, no double-spends." },
-];
 
 function Stat({ v, n, l, accent }: { v?: string; n?: number; l: string; accent?: boolean }) {
   return (
