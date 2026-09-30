@@ -8,7 +8,7 @@ import { Reveal } from "@/components/Reveal";
  */
 
 const GATES = [
-  { t: "Witness recheck", d: "the winning seed is re-run — wrong score, rejected" },
+  { t: "Witness recheck", d: "the winning seed is re-run; a wrong score is rejected" },
   { t: "Honeypots", d: "known-answer traps salted through the work" },
   { t: "Merkle challenge", d: "random buckets recomputed against your committed root" },
   { t: "Stake & slash", d: "cheat and your on-chain stake burns" },
@@ -20,7 +20,7 @@ export function Defenses() {
       <Reveal variant="up">
         <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Four ways a lie dies.</h2>
         <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[56ch]">
-          Watch a fake result try to make it through — it fails at every gate, for about <span className="num text-[var(--text)]">0.9%</span> extra compute, not 200%.
+          Watch a fake result try to make it through. It fails at every gate, for about <span className="num text-[var(--text)]">0.9%</span> extra compute, not 200%.
         </p>
       </Reveal>
 

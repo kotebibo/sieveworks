@@ -9,6 +9,7 @@ import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/Magnetic";
 import { Hero } from "@/components/Hero";
+import { Reframe } from "@/components/Reframe";
 import { Defenses } from "@/components/Defenses";
 import { MoneyFlow } from "@/components/MoneyFlow";
 import { CountUp, fmt } from "@/components/ui";
@@ -58,28 +59,7 @@ export default function Home() {
       <div className="mx-auto max-w-[1120px] px-5 sm:px-7">
         {/* ============ 2 · the reframe (why it can be trusted) ============ */}
         <section className="py-24 sm:py-32">
-          <Reveal variant="up">
-            <h2 className="font-display font-bold text-[clamp(28px,4.2vw,46px)] leading-[1.04] tracking-[-0.03em] max-w-[18ch]">
-              Pay a stranger to compute — and <em className="not-italic text-[var(--accent)]">know</em> they didn't lie.
-            </h2>
-          </Reveal>
-
-          <div className="mt-12 grid gap-5 md:grid-cols-2">
-            <Reveal variant="left" className="panel p-6 sm:p-7">
-              <div className="num text-[13px] text-[var(--text-faint)]">The old way</div>
-              <p className="mt-3 text-[16.5px] leading-[1.5] text-[var(--text-dim)]">
-                Ask <span className="text-[var(--text)]">“did you find it?”</span> and a lie is free to tell. So everyone runs the work
-                2–3× and compares — the buyer pays <span className="text-[var(--text)] num">200%+</span> just to not get cheated.
-              </p>
-            </Reveal>
-            <Reveal variant="right" delay={90} className="panel panel-bright p-6 sm:p-7">
-              <div className="num text-[13px]" style={{ color: "var(--accent)" }}>The Sieveworks way</div>
-              <p className="mt-3 text-[16.5px] leading-[1.5] text-[var(--text)]">
-                Ask <span style={{ color: "var(--accent)" }}>“what's the best in this slice?”</span> The answer carries a
-                <span className="font-semibold"> witness</span> — one seed that must reproduce the score on demand. Nothing to fake; a lie dies in <span className="num">microseconds</span>.
-              </p>
-            </Reveal>
-          </div>
+          <Reframe />
         </section>
 
         {/* ============ 3 · verification — four ways a lie dies ============ */}
@@ -140,7 +120,7 @@ export default function Home() {
           <Reveal variant="up">
             <h2 className="font-display font-bold text-[clamp(26px,3.6vw,40px)] tracking-[-0.028em]">Real budgets, settled on Solana.</h2>
             <p className="mt-3 text-[16px] text-[var(--text-dim)] max-w-[54ch]">
-              No trust in us required — the escrow, the records, and the payouts all live on-chain.
+              No trust in us required: the escrow, the records, and the payouts all live on-chain.
             </p>
           </Reveal>
 
@@ -167,7 +147,7 @@ export default function Home() {
             <Reveal variant="right" delay={80}>
               <p className="text-[16.5px] leading-[1.5] text-[var(--text-dim)]">
                 A <span className="text-[var(--text)]">module</span> is a tiny function that scores one candidate. Prime hunts, protein folds, model training,
-                render farms — anything shaped like <span className="text-[var(--text)]">“find the best across a huge space”</span> runs here. Write one, or use the community's.
+                render farms. Anything shaped like <span className="text-[var(--text)]">“find the best across a huge space”</span> runs here. Write one, or use the community's.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/modules" className="font-medium text-[14px] px-5 py-2.5 border border-[var(--border-bright)] hover:border-[var(--text)] transition-colors">Browse modules</Link>

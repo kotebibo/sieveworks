@@ -82,7 +82,7 @@ export function HeroFlow() {
         </div>
         <div>
           <div className="font-display font-bold text-[15px]">Sieved</div>
-          <div className="mt-1 text-[13px] text-[var(--text-dim)]">a swarm runs slices — each answer carries a witness</div>
+          <div className="mt-1 text-[13px] text-[var(--text-dim)]">a swarm runs slices; each answer carries a witness</div>
         </div>
         <div>
           <div className="font-display font-bold text-[15px]">Verified &amp; paid</div>

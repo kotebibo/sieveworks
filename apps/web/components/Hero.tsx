@@ -20,7 +20,7 @@ export function Hero() {
         </h1>
         <p className="reveal mt-5 text-[17px] sm:text-[18px] leading-[1.5] text-[var(--text-dim)] max-w-[54ch]" style={{ animationDelay: "90ms" }}>
           Sieveworks is a marketplace for <span className="text-[var(--text)]">verifiable compute</span>. Rent idle
-          computers to run a huge search — and <span className="text-[var(--text)]">know they didn&apos;t fake it</span>.
+          computers to run a huge search, and <span className="text-[var(--text)]">know they didn&apos;t fake it</span>.
           Re-checking the work costs about <span className="num">1%</span>, not <span className="num">200%</span>.
         </p>
         <div className="reveal mt-7 flex gap-3 flex-wrap" style={{ animationDelay: "160ms" }}>
@@ -39,15 +39,6 @@ export function Hero() {
 
       <div className="mt-12 sm:mt-16">
         <HeroFlow />
-      </div>
-
-      <div className="reveal-fade mt-10 flex justify-center" style={{ animationDelay: "560ms" }}>
-        <div className="scroll-cue flex flex-col items-center gap-1.5 text-[var(--text-faint)]">
-          <span className="barlabel">Scroll to see it running</span>
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-            <path d="M4 7 L9 12 L14 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
       </div>
     </section>
   );

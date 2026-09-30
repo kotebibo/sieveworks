@@ -6,8 +6,8 @@
 
 const STEPS = [
   { t: "Funded", d: "budget locked in an on-chain escrow before any work starts" },
-  { t: "Attested", d: "every record find written to Solana — who found what, forever" },
-  { t: "Claimed", d: "withdraw with a co-signed voucher — replay-proof, no double-spends" },
+  { t: "Attested", d: "every record find written to Solana: who found what, forever" },
+  { t: "Claimed", d: "withdraw with a co-signed voucher: replay-proof, no double-spends" },
 ];
 
 export function MoneyFlow() {
@@ -28,16 +28,24 @@ export function MoneyFlow() {
           <path d="M686 68 l11 6 l-11 6 z" fill="var(--verified)" />
         </g>
 
-        {/* 1 · escrow vault */}
+        {/* 1 · escrow vault, funded by an incoming SOL coin */}
         <g transform="translate(120,74)">
-          <rect x="-33" y="-37" width="66" height="74" rx="12" fill="var(--panel-2)" stroke="var(--border-bright)" strokeWidth="2" />
-          <circle cx="0" cy="0" r="17" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
-          <circle cx="0" cy="0" r="8" fill="none" stroke="var(--accent)" strokeWidth="2" />
-          <circle cx="0" cy="0" r="2.4" fill="var(--accent)" />
-          <g stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
-            <line x1="0" y1="-22" x2="0" y2="-27" /><line x1="0" y1="22" x2="0" y2="27" />
-            <line x1="-22" y1="0" x2="-27" y2="0" /><line x1="22" y1="0" x2="27" y2="0" />
+          <rect x="-32" y="-30" width="64" height="64" rx="12" fill="var(--panel-2)" stroke="var(--border-bright)" strokeWidth="2" />
+          {/* deposit slot */}
+          <rect x="-13" y="-30" width="26" height="5" rx="2.5" fill="var(--border-bright)" />
+          {/* incoming SOL coin (Solana-style bars), dropping into the slot */}
+          <g className="mf-deposit">
+            <circle cx="0" cy="-48" r="12" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
+            <g stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
+              <line x1="-6" y1="-51.5" x2="4.5" y2="-54.5" />
+              <line x1="-6" y1="-48" x2="4.5" y2="-51" />
+              <line x1="-6" y1="-44.5" x2="4.5" y2="-47.5" />
+            </g>
           </g>
+          {/* vault dial */}
+          <circle cx="0" cy="6" r="11" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
+          <circle cx="0" cy="6" r="4.5" fill="none" stroke="var(--accent)" strokeWidth="2" />
+          <circle cx="0" cy="6" r="1.6" fill="var(--accent)" />
         </g>
 
         {/* 2 · on-chain record */}
