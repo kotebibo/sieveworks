@@ -7,9 +7,9 @@ import { IntroReveal } from "@/components/IntroReveal";
 
 /**
  * Global client-only chrome: momentum smooth-scroll (Lenis) + custom cursor +
- * first-load intro. Lenis drives the real scroll position, so the sticky 3D
- * hero, IntersectionObserver reveals, and anchor links all keep working; it's
- * skipped under prefers-reduced-motion so nothing hijacks assistive scrolling.
+ * first-load intro. Lenis drives the real scroll position, so the
+ * IntersectionObserver reveals and anchor links all keep working; it's skipped
+ * under prefers-reduced-motion so nothing hijacks assistive scrolling.
  */
 export function ClientChrome() {
   useEffect(() => {

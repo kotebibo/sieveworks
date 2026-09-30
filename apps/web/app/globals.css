@@ -273,31 +273,23 @@ html.lenis, html.lenis body { height: auto; }
   .intro-glyph, .intro-word, .intro-line::after, .intro-out { animation: none; }
 }
 
-/* Static-hero sieve motif (components/HeroFallback.tsx) — pure CSS so mobile
-   and the pre-3D first paint aren't flat. Seeds fall; some pass through the
-   sieve line, some catch and pop. */
-.hero-sieve { position: relative; height: 150px; max-width: 440px; margin-top: 42px; }
-.hero-sieve .hs-line { position: absolute; left: 0; right: 0; top: 104px; height: 2px; background: linear-gradient(90deg, transparent, var(--border-bright) 12%, var(--border-bright) 88%, transparent); }
-.hs-drop { position: absolute; top: 0; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 9999px; opacity: 0; }
-.hs-pass { animation: hs-pass 2.6s cubic-bezier(0.45, 0, 0.7, 1) infinite; }
-.hs-catch { animation: hs-catch 2.9s cubic-bezier(0.45, 0, 0.7, 1) infinite; }
-@keyframes hs-pass {
-  0% { transform: translateY(-8px); opacity: 0; }
-  12% { opacity: 0.9; }
-  90% { opacity: 0.9; }
-  100% { transform: translateY(150px); opacity: 0; }
-}
-@keyframes hs-catch {
-  0% { transform: translateY(-8px) scale(1); opacity: 0; }
-  12% { opacity: 1; }
-  50% { transform: translateY(100px) scale(1); opacity: 1; }
-  60% { transform: translateY(100px) scale(1.55); }
-  74% { transform: translateY(100px) scale(1); }
-  92% { transform: translateY(100px) scale(1); opacity: 1; }
-  100% { transform: translateY(100px) scale(0.6); opacity: 0; }
-}
+/* Hero 3-step flow (components/HeroFlow.tsx). The connectors draw in once; each
+   art keeps one calm looping accent. All CSS-only so it paints without JS. */
+.flow-arrow-line { stroke-dasharray: 24; stroke-dashoffset: 24; animation: flow-draw 0.5s 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.flow-arrow-head { stroke-dasharray: 16; stroke-dashoffset: 16; animation: flow-draw 0.35s 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes flow-draw { to { stroke-dashoffset: 0; } }
+.hero-float { animation: hero-float 3.4s ease-in-out infinite; }
+@keyframes hero-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.hero-pulse { transform-origin: 52px 50px; animation: hero-pulse 3s ease-in-out infinite; }
+@keyframes hero-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+/* Scroll cue — a quiet nudge that there's a running network below the fold. */
+.scroll-cue { animation: scroll-bob 1.9s ease-in-out infinite; }
+@keyframes scroll-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(4px); } }
+
 @media (prefers-reduced-motion: reduce) {
-  .hs-drop { animation: none; opacity: 0.55; transform: translateY(100px); }
+  .flow-arrow-line, .flow-arrow-head { animation: none; stroke-dashoffset: 0; }
+  .hero-float, .hero-pulse, .scroll-cue { animation: none; }
 }
 
 /* ---- live flappy showcase (homepage) ---- */

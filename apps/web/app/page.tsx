@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { fetchFinds, fetchJobResults, fetchStats, fetchSwarm, subscribeEvents, type GlobalStats } from "@/lib/api";
 import { Wordmark } from "@/components/Wordmark";
@@ -9,12 +8,8 @@ import { Sieve } from "@/components/Sieve";
 import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/Magnetic";
-import { HeroFallback } from "@/components/HeroFallback";
+import { Hero } from "@/components/Hero";
 import { CountUp, fmt } from "@/components/ui";
-
-// Full-screen scroll-driven 3D hero — WebGL, client-only, lazy (off the critical
-// path). The static HeroFallback paints instantly so there's never a blank hero.
-const ScrollExperience = dynamic(() => import("@/components/ScrollExperience").then((m) => m.ScrollExperience), { ssr: false, loading: () => <HeroFallback /> });
 
 export default function Home() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
@@ -55,8 +50,8 @@ export default function Home() {
 
   return (
     <>
-      {/* ============ 1 · scroll-driven 3D hero ============ */}
-      <ScrollExperience />
+      {/* ============ 1 · hero — plain statement + the 3-step mechanism ============ */}
+      <Hero />
 
       <div className="mx-auto max-w-[1120px] px-5 sm:px-7">
         {/* ============ 2 · the reframe (why it can be trusted) ============ */}
