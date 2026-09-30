@@ -1,4 +1,5 @@
 import { Reveal } from "@/components/Reveal";
+import { SolanaMark } from "@/components/SolanaMark";
 
 /**
  * "Four ways a lie dies" as an illustrated gauntlet (Direction B, toned down): a
@@ -71,10 +72,10 @@ export function Defenses() {
             <circle cx="40" cy="122" r="4.5" fill="var(--accent)" />
           </g>
 
-          {/* gate 4 — staked coin, slashed */}
+          {/* gate 4 — staked SOL, slashed */}
           <g transform="translate(858,0)">
             <circle cx="0" cy="86" r="24" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2.5" />
-            <circle cx="0" cy="86" r="12" fill="none" stroke="var(--accent)" strokeWidth="2" />
+            <g transform="translate(0 86)"><SolanaMark id="sol-stake" w={26} /></g>
             <line className="def-slash" x1="-20" y1="106" x2="20" y2="66" stroke="var(--amber)" strokeWidth="4.5" strokeLinecap="round" />
           </g>
         </svg>

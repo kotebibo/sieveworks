@@ -1,3 +1,5 @@
+import { SolanaMark } from "@/components/SolanaMark";
+
 /**
  * "Real budgets, settled on Solana" as a drawn flow that echoes the hero ribbon:
  * escrow → on-chain record → claimed to a wallet. Drawn icons, plain caption row
@@ -33,19 +35,14 @@ export function MoneyFlow() {
           <rect x="-32" y="-30" width="64" height="64" rx="12" fill="var(--panel-2)" stroke="var(--border-bright)" strokeWidth="2" />
           {/* deposit slot */}
           <rect x="-13" y="-30" width="26" height="5" rx="2.5" fill="var(--border-bright)" />
-          {/* incoming SOL coin (Solana-style bars), dropping into the slot */}
+          {/* incoming SOL, dropping into the slot */}
           <g className="mf-deposit">
-            <circle cx="0" cy="-48" r="12" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
-            <g stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
-              <line x1="-6" y1="-51.5" x2="4.5" y2="-54.5" />
-              <line x1="-6" y1="-48" x2="4.5" y2="-51" />
-              <line x1="-6" y1="-44.5" x2="4.5" y2="-47.5" />
-            </g>
+            <circle cx="0" cy="-48" r="13" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
+            <g transform="translate(0 -48)"><SolanaMark id="sol-deposit" w={17} /></g>
           </g>
-          {/* vault dial */}
-          <circle cx="0" cy="6" r="11" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
-          <circle cx="0" cy="6" r="4.5" fill="none" stroke="var(--accent)" strokeWidth="2" />
-          <circle cx="0" cy="6" r="1.6" fill="var(--accent)" />
+          {/* keyhole */}
+          <circle cx="0" cy="5" r="5.5" fill="var(--accent)" />
+          <path d="M-3 8 L3 8 L2 16 L-2 16 Z" fill="var(--accent)" />
         </g>
 
         {/* 2 · on-chain record */}
@@ -65,10 +62,10 @@ export function MoneyFlow() {
           <rect x="-34" y="-26" width="68" height="52" rx="10" fill="var(--panel)" stroke="var(--accent)" strokeWidth="2" />
           <path d="M6 -6 h24 a4 4 0 0 1 4 4 v4 a4 4 0 0 1 -4 4 h-24 z" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
           <circle cx="18" cy="0" r="3" fill="var(--accent)" />
-          {/* incoming coin */}
+          {/* incoming SOL */}
           <g transform="translate(-24,-2)">
             <circle cx="0" cy="0" r="12" fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
-            <circle cx="0" cy="0" r="5.5" fill="none" stroke="var(--accent)" strokeWidth="2" />
+            <SolanaMark id="sol-claim" w={15} />
           </g>
         </g>
       </svg>

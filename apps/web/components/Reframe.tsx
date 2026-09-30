@@ -53,9 +53,9 @@ export function Reframe() {
 
           <svg viewBox="0 0 240 92" width="240" className="mt-6 max-w-full" aria-hidden style={{ display: "block" }}>
             <rect x="22" y="26" width="118" height="46" rx="9" fill="var(--panel)" stroke="var(--accent)" strokeWidth="2" />
-            <line x1="36" y1="42" x2="112" y2="42" stroke="var(--border-bright)" strokeWidth="3.5" strokeLinecap="round" />
-            <circle cx="41" cy="58" r="5" fill="var(--accent)" />
-            <text x="54" y="62" fontSize="12" fill="var(--text-faint)" style={{ fontFamily: "var(--font-mono), monospace" }}>witness seed</text>
+            <line x1="38" y1="41" x2="110" y2="41" stroke="var(--border-bright)" strokeWidth="3.5" strokeLinecap="round" />
+            <line x1="38" y1="54" x2="86" y2="54" stroke="var(--border-bright)" strokeWidth="3.5" strokeLinecap="round" />
+            <circle cx="103" cy="54" r="5.5" fill="var(--accent)" />
             <path d="M150 49 h30" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" />
             <path d="M174 43 l7 6 l-7 6" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             <circle cx="206" cy="49" r="16" fill="rgba(30,158,92,0.12)" stroke="var(--verified)" strokeWidth="2" />

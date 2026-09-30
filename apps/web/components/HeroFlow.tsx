@@ -1,3 +1,5 @@
+import { SolanaMark } from "@/components/SolanaMark";
+
 /**
  * Hero illustration: Funded → Sieved → Verified & paid as ONE continuous drawn
  * scene (illustration-led, Direction B toned down) — a ribbon carries seeds from
@@ -6,12 +8,13 @@
  * prefers-reduced-motion (see globals.css .hf-*).
  */
 
-function Coin({ x, y, r }: { x: number; y: number; r: number }) {
+function Coin({ x, y, r, id }: { x: number; y: number; r: number; id: string }) {
   return (
     <g>
       <circle cx={x} cy={y} r={r} fill="var(--accent-ghost)" stroke="var(--accent)" strokeWidth="2" />
-      <circle cx={x} cy={y} r={r * 0.5} fill="none" stroke="var(--accent)" strokeWidth="2" />
-      <circle cx={x} cy={y} r={r * 0.14} fill="var(--accent)" />
+      <g transform={`translate(${x} ${y})`}>
+        <SolanaMark id={id} w={r * 1.15} />
+      </g>
     </g>
   );
 }
@@ -46,8 +49,8 @@ export function HeroFlow() {
           <circle cx="768" cy="133" r="4" fill="var(--verified)" />
         </g>
 
-        {/* 1 · funded — coin under a lock */}
-        <Coin x={70} y={106} r={30} />
+        {/* 1 · funded — SOL locked in escrow */}
+        <Coin x={70} y={106} r={30} id="sol-hero-fund" />
         <path d="M55 85 v-6 a15 15 0 0 1 30 0 v6" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" />
 
         {/* 2 · sieved — funnel + mesh, seeds pour in, good ones catch */}
@@ -71,7 +74,7 @@ export function HeroFlow() {
           <circle cx="40" cy="30" r="30" fill="rgba(30,158,92,0.12)" stroke="var(--verified)" strokeWidth="2" />
           <path d="M27 31 l9 9 l17 -20" fill="none" stroke="var(--verified)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
         </g>
-        <Coin x={938} y={128} r={16} />
+        <Coin x={938} y={128} r={16} id="sol-hero-paid" />
       </svg>
 
       {/* three moments — plain captions, not cards */}
