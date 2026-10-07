@@ -9,7 +9,6 @@ import { FlappyShowcase } from "@/components/FlappyShowcase";
 import { Reveal } from "@/components/Reveal";
 import { Magnetic } from "@/components/Magnetic";
 import { Hero } from "@/components/Hero";
-import { TwoSides } from "@/components/TwoSides";
 import { SearchJob } from "@/components/SearchJob";
 import { WhyBetter } from "@/components/WhyBetter";
 import { HeroFlow } from "@/components/HeroFlow";
@@ -58,10 +57,7 @@ export default function Home() {
       {/* ============ 1 · hero — plain statement + the 3-step mechanism ============ */}
       <Hero />
 
-      {/* ============ 2 · one network, two sides ============ */}
-      <TwoSides />
-
-      {/* ============ 3 · what's a search job ============ */}
+      {/* ============ 2 · what's a search job ============ */}
       <SearchJob />
 
       {/* ============ 4 · why not just rent a datacenter ============ */}
