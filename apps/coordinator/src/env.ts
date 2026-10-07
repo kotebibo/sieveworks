@@ -34,7 +34,15 @@ const EnvSchema = z.object({
   // probabilistic (10% + slow-lane) path untouched. ON: chunks are asserted
   // on-chain and only advance the lineage after a coordinator re-run within the
   // challenge window (window-gated finality = prevention, not just detection).
-  TRAINING_FRAUD_PROOF: z.coerce.boolean().default(false),
+  //
+  // STRICT parse: only the literal string "true" turns this ON. (z.coerce.boolean()
+  // treats ANY non-empty string — including "false" — as truthy, so a stray
+  // TRAINING_FRAUD_PROOF=false silently enabled it. Leave the secret UNSET to
+  // disable; set it to exactly "true" to enable.)
+  TRAINING_FRAUD_PROOF: z
+    .string()
+    .optional()
+    .transform((v) => v === "true"),
   // Challenge window in Solana slots (~2/s on devnet). Short by design (owner:
   // coordinator-driven). 150 ≈ 60-75s — enough for the sweep to re-run + confirm.
   TRAINING_WINDOW_SLOTS: z.coerce.number().int().positive().default(150),

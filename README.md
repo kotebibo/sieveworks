@@ -51,3 +51,13 @@ The platform above shipped solo in 7 days (Aug 24–31, tag [`pre-cwf`](../../re
 - **GPU execution** — wgpu kernel for hash-grind, verified by the unchanged CPU reference
 
 Originally built for the Solana hackathon, August 2026.
+
+## License & public good
+
+Sieveworks is open source under the [MIT license](LICENSE), built in the open as a
+public good. The value is the **mechanism** — a cheap, publicly reproducible way to
+verify untrusted compute (~1% overhead instead of ~200% redundancy) — and it is most
+useful if anyone can audit, fork, and build on it. Every verified record ships a
+public audit recipe you can re-run against the pinned WASM artifact, so the
+verification is checkable by anyone, not just taken on trust. Contributions welcome —
+see [CONTRIBUTING.md](CONTRIBUTING.md).
