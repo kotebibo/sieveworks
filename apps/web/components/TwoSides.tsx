@@ -20,7 +20,7 @@ export function TwoSides() {
 
         <div className="mt-12 grid items-center gap-8 md:grid-cols-[1fr_auto_1fr]">
           {/* funder */}
-          <Reveal variant="left" className="md:pr-6">
+          <Reveal variant="left" className="flex flex-col items-start text-left md:items-end md:text-right md:pr-8">
             <div className="text-[13px] font-semibold text-[var(--text-faint)]">Have a huge job?</div>
             <h3 className="mt-1 font-display font-bold text-[21px]">Post it, pay for results.</h3>
             <svg viewBox="0 0 180 90" width="180" className="my-4 max-w-full" aria-hidden>
@@ -48,7 +48,7 @@ export function TwoSides() {
           </Reveal>
 
           {/* contributor */}
-          <Reveal variant="right" delay={90} className="md:pl-6">
+          <Reveal variant="right" delay={90} className="flex flex-col items-start text-left md:pl-8">
             <div className="text-[13px] font-semibold text-[var(--text-faint)]">Have a computer?</div>
             <h3 className="mt-1 font-display font-bold text-[21px]">Open a tab, earn.</h3>
             <svg viewBox="0 0 180 90" width="180" className="my-4 max-w-full" aria-hidden>

@@ -29,17 +29,9 @@ export function HeroFlow() {
         aria-label="A funded bounty's seeds flow through a sieve where good ones catch, then reach a verified check and payout."
         style={{ display: "block", overflow: "visible" }}
       >
-        <defs>
-          <linearGradient id="hf-ribbon" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="var(--accent)" stopOpacity="0.16" />
-            <stop offset="0.5" stopColor="var(--accent)" stopOpacity="0.34" />
-            <stop offset="1" stopColor="var(--verified)" stopOpacity="0.30" />
-          </linearGradient>
-        </defs>
-
-        {/* the connecting ribbon */}
+        {/* the connecting ribbon — solid, soft */}
         <path className="hf-ribbon" d="M96 106 C 250 58, 340 58, 470 106 S 700 154, 904 106"
-          fill="none" stroke="url(#hf-ribbon)" strokeWidth="13" strokeLinecap="round" pathLength={1} />
+          fill="none" stroke="var(--accent-2)" strokeWidth="9" strokeLinecap="round" pathLength={1} />
 
         {/* seeds riding the ribbon */}
         <g className="hf-seeds" fill="var(--accent)">
