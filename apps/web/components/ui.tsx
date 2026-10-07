@@ -67,8 +67,8 @@ export function LiveNum({ value, className = "" }: { value: string; className?: 
 export function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="panel p-3">
-      <div className="text-[11px] uppercase tracking-wider text-[var(--text-dim)]">{label}</div>
-      <div className="mt-1 text-xl" style={accent ? { color: "var(--accent)" } : undefined}>
+      <div className="text-[12px] text-[var(--text-faint)]">{label}</div>
+      <div className="mt-1 font-display font-bold text-xl" style={accent ? { color: "var(--accent)" } : undefined}>
         <LiveNum value={value} />
       </div>
     </div>
@@ -124,10 +124,10 @@ export function Mono({
 export function Progress({ done, total }: { done: number; total: number }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
-    <div className="h-1.5 w-full bg-[var(--panel-2)] overflow-hidden">
+    <div className="h-1.5 w-full rounded-full bg-[var(--panel-2)] overflow-hidden">
       {/* animate transform, not width — GPU-composited, no layout thrash */}
       <div
-        className="h-full w-full bg-[var(--accent)] origin-left transition-transform duration-500 ease-out"
+        className="h-full w-full rounded-full bg-[var(--accent)] origin-left transition-transform duration-500 ease-out"
         style={{ transform: `scaleX(${pct / 100})` }}
       />
     </div>
@@ -144,7 +144,8 @@ export function Badge({ state }: { state: string }) {
           ? "var(--accent)"
           : "var(--text-dim)";
   return (
-    <span className="num text-[11px] px-1.5 py-0.5 border" style={{ color, borderColor: color }}>
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-dim)]">
+      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color }} />
       {state}
     </span>
   );
