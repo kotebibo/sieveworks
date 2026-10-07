@@ -1,44 +1,38 @@
 import Link from "next/link";
 import { Magnetic } from "@/components/Magnetic";
-import { HeroFlow } from "@/components/HeroFlow";
+import { HeroSwarm } from "@/components/HeroSwarm";
 
 /**
- * Homepage hero. A plain statement of what Sieveworks is + the whole mechanism
- * in three illustrated steps (HeroFlow), so a first-time visitor gets it at a
- * glance — no scroll-jack, no WebGL. Padding-sized (not 100vh) so the next
- * section peeks and the scroll cue is honest. Entrance is the CSS-only .reveal
- * choreography (paints even before hydration; off under reduced-motion).
+ * Homepage hero. Leads with a plain benefit a non-technical person gets instantly,
+ * and makes the marketplace's two sides visible up front via the two CTAs. The
+ * swarm illustration shows a crowd crunching one job. CSS-only .reveal entrance.
  */
 export function Hero() {
   return (
-    <section className="mx-auto max-w-[1120px] px-5 sm:px-7 pt-14 sm:pt-20 pb-6">
-      <div className="max-w-[60ch]">
-        <h1 className="reveal font-display font-extrabold leading-[1.03] tracking-[-0.035em] text-[clamp(38px,7vw,66px)]">
-          Pay strangers to compute.
-          <br />
-          <span className="text-[var(--accent)]">Prove they did.</span>
-        </h1>
-        <p className="reveal mt-5 text-[17px] sm:text-[18px] leading-[1.5] text-[var(--text-dim)] max-w-[54ch]" style={{ animationDelay: "90ms" }}>
-          Sieveworks is a marketplace for <span className="text-[var(--text)]">verifiable compute</span>. Rent idle
-          computers to run a huge search, and <span className="text-[var(--text)]">know they didn&apos;t fake it</span>.
-          Re-checking the work costs about <span className="num">1%</span>, not <span className="num">200%</span>.
-        </p>
-        <div className="reveal mt-7 flex gap-3 flex-wrap" style={{ animationDelay: "160ms" }}>
-          <Magnetic>
-            <Link href="/contribute" data-cursor className="sheen inline-block font-medium text-[14px] px-6 py-3 text-[var(--bg)]" style={{ background: "var(--accent)" }}>
-              Start contributing
-            </Link>
-          </Magnetic>
-          <Magnetic>
-            <Link href="/how-it-works" data-cursor className="inline-block font-medium text-[14px] px-6 py-3 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">
-              How it works
-            </Link>
-          </Magnetic>
-        </div>
+    <section className="mx-auto max-w-[1120px] px-5 sm:px-7 pt-14 sm:pt-20 pb-8">
+      <h1 className="reveal font-display font-extrabold leading-[1.05] tracking-[-0.03em] text-[clamp(30px,4.6vw,52px)] max-w-[820px] text-balance">
+        A supercomputer&apos;s worth of work, done by a crowd, for a fraction of the cost.
+      </h1>
+      <p className="reveal mt-6 text-[17px] sm:text-[18px] leading-[1.5] text-[var(--text-dim)] max-w-[56ch]" style={{ animationDelay: "90ms" }}>
+        Sieveworks splits huge jobs across thousands of everyday computers. You pay only for work
+        that&apos;s checked and proven real: about <span className="num">1%</span> overhead, not the <span className="num">200%</span> of running everything twice to be safe.
+      </p>
+      <div className="reveal mt-7 flex flex-wrap items-center gap-3" style={{ animationDelay: "160ms" }}>
+        <Magnetic>
+          <Link href="/bounties/new" data-cursor className="sheen inline-block font-medium text-[14.5px] px-6 py-3 text-[var(--bg)]" style={{ background: "var(--accent)" }}>
+            Post a job
+          </Link>
+        </Magnetic>
+        <Magnetic>
+          <Link href="/contribute" data-cursor className="inline-block font-medium text-[14.5px] px-6 py-3 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">
+            Earn with your computer
+          </Link>
+        </Magnetic>
+        <span className="w-full text-[12.5px] text-[var(--text-faint)]">Two sides, one network: bring a job, or bring a computer.</span>
       </div>
 
-      <div className="mt-12 sm:mt-16">
-        <HeroFlow />
+      <div className="reveal-fade mt-12 sm:mt-14" style={{ animationDelay: "320ms" }}>
+        <HeroSwarm />
       </div>
     </section>
   );
