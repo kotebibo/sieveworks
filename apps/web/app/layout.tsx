@@ -11,20 +11,18 @@ import { Wordmark } from "@/components/Wordmark";
 import { NavLinks } from "@/components/NavLinks";
 import { ClientChrome } from "@/components/ClientChrome";
 
-// Newsreader — a literary serif with optical sizing and true italics. The
-// anti-generic display voice: serif headlines against grotesque body + mono
-// data = the "assay certificate / ledger of record" feel. (Chosen over
-// Fraunces, which has become a designer default — impeccable flags it.)
+// Daylight Arcade type: Nunito (rounded, confident display) + Inter (body) +
+// Spline Sans Mono (tabular numbers). Friendly but precise.
 const display = Nunito({ subsets: ["latin"], weight: ["600", "700", "800", "900"], variable: "--font-display", display: "swap" });
 const sans = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans", display: "swap" });
 const mono = Spline_Sans_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://sievework.com"),
-  title: { default: "Sieveworks · verifiable distributed compute", template: "%s · Sieveworks" },
+  title: { default: "Sieveworks · a compute network you can trust", template: "%s · Sieveworks" },
   description:
-    "Verifiable distributed compute. Pay strangers to run work and prove they actually ran it: contributors run chunks in the browser, paid per verified chunk on Solana. Proving the work costs under 1% of doing it.",
-  openGraph: { title: "Sieveworks", description: "Pay strangers to compute. Prove they did.", type: "website" },
+    "A supercomputer's worth of work, done by a crowd, for a fraction of the cost. Post a job or earn with your computer: a crowd runs huge searches, every result is verified, settled on Solana. Proving the work costs about 1%, not 200%.",
+  openGraph: { title: "Sieveworks", description: "A supercomputer's worth of work, done by a crowd. Every result verified, settled on Solana.", type: "website" },
 };
 
 
