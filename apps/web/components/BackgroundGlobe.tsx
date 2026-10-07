@@ -24,7 +24,7 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean
 
 export function BackgroundGlobe() {
   return (
-    <div className="w-full aspect-square" aria-hidden>
+    <div className="w-full h-full" aria-hidden>
       <GlobeBoundary>
         <GlobeScene />
       </GlobeBoundary>

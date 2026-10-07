@@ -31,13 +31,13 @@ function ComputerIcon() {
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      {/* subtle 3D globe backdrop */}
-      <div className="pointer-events-none absolute top-1/2 right-[-12%] -translate-y-1/2 w-[640px] max-w-[64%] opacity-55 hidden md:block" aria-hidden>
+    <section className="relative overflow-hidden min-h-screen flex items-center">
+      {/* 3D dotted-globe backdrop, sized to the full-height hero */}
+      <div className="pointer-events-none absolute top-1/2 right-[-10%] -translate-y-1/2 h-[92vh] max-h-[840px] aspect-square opacity-60 hidden md:block" aria-hidden>
         <BackgroundGlobe />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-[1120px] px-5 sm:px-7 pt-14 sm:pt-20 pb-10">
+      <div className="relative z-10 w-full mx-auto max-w-[1120px] px-5 sm:px-7 py-20">
         <h1 className="reveal font-display font-extrabold leading-[1.04] tracking-[-0.03em] text-[clamp(32px,5vw,56px)] max-w-[15ch]">
           Two ways into one network.
         </h1>

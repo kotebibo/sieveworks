@@ -66,6 +66,7 @@ const VERT = /* glsl */ `
   uniform float uTime;
   uniform float uDpr;
   uniform float uSize;
+  uniform float uScale;   // canvas height in CSS px — keeps dots a few px, not huge
   varying float vType;
   varying float vFront;
   void main() {
@@ -75,7 +76,7 @@ const VERT = /* glsl */ `
     vFront = smoothstep(-0.2, 0.55, n.z);
     float typeSize = aType == 2.0 ? 2.2 : (aType == 1.0 ? 1.35 : 0.85);
     float pulse = aType == 2.0 ? (0.82 + 0.28 * sin(uTime * 2.1 + aSeed * 6.2831)) : 1.0;
-    float perspective = 300.0 / max(-mv.z, 0.1);
+    float perspective = uScale / max(-mv.z, 0.1);
     gl_PointSize = uSize * typeSize * pulse * uDpr * perspective * (0.58 + 0.42 * vFront);
     gl_Position = projectionMatrix * mv;
   }
@@ -152,7 +153,8 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
         uniforms: {
           uTime: { value: 0 },
           uDpr: { value: typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1 },
-          uSize: { value: 2.5 },
+          uScale: { value: 800 },
+          uSize: { value: 0.0032 },
           uLand: { value: LAND },
           uOcean: { value: OCEAN },
           uMarker: { value: MARKER },
@@ -171,6 +173,7 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
       init.current = true;
     }
     material.uniforms.uTime.value = state.clock.elapsedTime;
+    material.uniforms.uScale.value = state.size.height;
     if (!reduced) p.rotation.y += Math.min(delta, 0.05) * 0.075;
   });
 
