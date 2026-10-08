@@ -38,7 +38,7 @@ export function Hero({ stats }: { stats: GlobalStats | null }) {
   return (
     <section className="relative overflow-hidden min-h-screen flex items-center">
       {/* ASCII globe backdrop, sized to the full-height hero */}
-      <div className="pointer-events-none absolute top-1/2 right-[-8%] -translate-y-1/2 w-[70vh] max-w-[760px] hidden md:block" aria-hidden>
+      <div className="pointer-events-none absolute top-1/2 right-[3%] -translate-y-1/2 w-[70vh] max-w-[760px] hidden md:block" aria-hidden>
         <AsciiGlobe />
       </div>
 
