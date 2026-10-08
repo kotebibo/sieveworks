@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Magnetic } from "@/components/Magnetic";
-import { BackgroundGlobe } from "@/components/BackgroundGlobe";
+import { AsciiGlobe } from "@/components/AsciiGlobe";
 import { CountUp, fmt } from "@/components/ui";
 import type { GlobalStats } from "@/lib/api";
 
@@ -37,9 +37,9 @@ const panel =
 export function Hero({ stats }: { stats: GlobalStats | null }) {
   return (
     <section className="relative overflow-hidden min-h-screen flex items-center">
-      {/* 3D dotted-globe backdrop, sized to the full-height hero */}
-      <div className="pointer-events-none absolute top-1/2 right-[-14%] -translate-y-1/2 h-[122vh] max-h-[1040px] aspect-square opacity-100 hidden md:block" aria-hidden>
-        <BackgroundGlobe />
+      {/* ASCII globe backdrop, sized to the full-height hero */}
+      <div className="pointer-events-none absolute top-1/2 right-[-8%] -translate-y-1/2 w-[70vh] max-w-[760px] hidden md:block" aria-hidden>
+        <AsciiGlobe />
       </div>
 
       <div className="relative z-10 w-full mx-auto max-w-[1120px] px-5 sm:px-7 py-20">

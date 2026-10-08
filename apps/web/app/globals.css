@@ -148,6 +148,13 @@ body {
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .live-pulse { animation: live-pulse 2s ease-in-out infinite; }
 
+/* ASCII globe backdrop */
+.ascii-globe { position: relative; width: 100%; font-family: "Spline Sans Mono", ui-monospace, monospace; }
+.ascii-base { margin: 0; white-space: pre; color: #8296b6; opacity: 0.9; user-select: none; }
+.ascii-marker { position: absolute; left: 0; top: 0; transform: translate(-0.12ch, -0.04em); text-shadow: 0 0 7px currentColor; animation: ascii-flash 1.7s ease-in-out infinite; pointer-events: none; }
+@keyframes ascii-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .ascii-marker { animation: none; } }
+
 /* ============================================================
    DELIGHT — on the metallurgy/sieve metaphor. All motion here is
    ambient/hover, so it's gated behind prefers-reduced-motion below.
