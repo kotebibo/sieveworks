@@ -21,6 +21,7 @@ const OCEAN = new THREE.Color(0x7f9cc2); // body dots
 const MARKER = new THREE.Color(0x1e9e5c); // --verified
 const ARC = new THREE.Color(0x5b8fd6); // resting arc
 const PULSE = new THREE.Color(0x2f79ce); // travelling highlight
+const GRAT = new THREE.Color(0x9fb4d4); // graticule wireframe
 
 // contributor cities [lat, lon]
 const CITIES: Record<string, [number, number]> = {
@@ -47,6 +48,14 @@ const LINKS: [string, string][] = [
   ["nyc", "saopaulo"],
   ["singapore", "sydney"],
   ["london", "saopaulo"],
+  ["tbilisi", "singapore"],
+  ["sf", "sydney"],
+  ["tokyo", "sydney"],
+  ["bangalore", "london"],
+  ["saopaulo", "sf"],
+  ["nyc", "tokyo"],
+  ["tbilisi", "nyc"],
+  ["london", "singapore"],
 ];
 
 // exact inverse of the land-sampling math (lat = asin(y), lon = atan2(z, x))
@@ -135,22 +144,41 @@ const ARC_FRAG = /* glsl */ `
   varying float vU;
   varying float vPhase;
   void main() {
-    float head = fract(uTime * 0.16 + vPhase);
-    float d = abs(vU - head);
-    d = min(d, 1.0 - d);
-    float pulse = smoothstep(0.1, 0.0, d);
+    float head1 = fract(uTime * 0.15 + vPhase);
+    float head2 = fract(uTime * 0.15 + vPhase + 0.5);
+    float d1 = abs(vU - head1); d1 = min(d1, 1.0 - d1);
+    float d2 = abs(vU - head2); d2 = min(d2, 1.0 - d2);
+    float pulse = max(smoothstep(0.09, 0.0, d1), smoothstep(0.09, 0.0, d2));
     vec3 c = mix(uArc, uPulse, pulse);
-    float a = (0.3 + 0.7 * pulse) * mix(0.1, 1.0, vFront);
+    float a = (0.34 + 0.66 * pulse) * mix(0.1, 1.0, vFront);
     gl_FragColor = vec4(c, a);
+  }
+`;
+
+const GRAT_VERT = /* glsl */ `
+  varying float vFront;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec3 n = normalize(mat3(modelViewMatrix) * normalize(position));
+    vFront = smoothstep(-0.1, 0.5, n.z);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const GRAT_FRAG = /* glsl */ `
+  uniform vec3 uColor;
+  varying float vFront;
+  void main() {
+    gl_FragColor = vec4(uColor, 0.06 + 0.22 * vFront);
   }
 `;
 
 export default function DotGlobe({ reduced }: { reduced: boolean }) {
   const spin = useRef<THREE.Group>(null);
 
-  const { pointsGeo, pointsMat, arcGeo, arcMat } = useMemo(() => {
+  const { pointsGeo, pointsMat, arcGeo, arcMat, gratGeo, gratMat } = useMemo(() => {
     // ---- uniform dot field, land highlighted ----
-    const N = 10000;
+    const N = 13000;
     const pos: number[] = [];
     const type: number[] = [];
     const seed: number[] = [];
@@ -244,7 +272,43 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
       },
     });
 
-    return { pointsGeo: pg, pointsMat: pm, arcGeo: ag, arcMat: am };
+    // ---- graticule wireframe: latitude rings + meridians ----
+    const R = 0.998;
+    const gPos: number[] = [];
+    const pushSeg = (p0: number[], p1: number[]) =>
+      gPos.push(p0[0] * R, p0[1] * R, p0[2] * R, p1[0] * R, p1[1] * R, p1[2] * R);
+    for (const latDeg of [-60, -30, 0, 30, 60]) {
+      const lat = (latDeg * Math.PI) / 180, yy = Math.sin(lat), rr = Math.cos(lat), seg = 72;
+      let prev: number[] | null = null;
+      for (let i = 0; i <= seg; i++) {
+        const th = (i / seg) * 2 * Math.PI;
+        const p = [Math.cos(th) * rr, yy, Math.sin(th) * rr];
+        if (prev) pushSeg(prev, p);
+        prev = p;
+      }
+    }
+    for (let d = 0; d < 360; d += 30) {
+      const lon = (d * Math.PI) / 180, seg = 48;
+      let prev: number[] | null = null;
+      for (let i = 0; i <= seg; i++) {
+        const lat = -Math.PI / 2 + (i / seg) * Math.PI, rr = Math.cos(lat), yy = Math.sin(lat);
+        const p = [Math.cos(lon) * rr, yy, Math.sin(lon) * rr];
+        if (prev) pushSeg(prev, p);
+        prev = p;
+      }
+    }
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute("position", new THREE.Float32BufferAttribute(gPos, 3));
+    const gm = new THREE.ShaderMaterial({
+      vertexShader: GRAT_VERT,
+      fragmentShader: GRAT_FRAG,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      uniforms: { uColor: { value: GRAT } },
+    });
+
+    return { pointsGeo: pg, pointsMat: pm, arcGeo: ag, arcMat: am, gratGeo: gg, gratMat: gm };
   }, []);
 
   const init = useRef(false);
@@ -266,6 +330,7 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
     // ~axial tilt on the parent; spin the inner group so dots + arcs turn together
     <group rotation={[0.1, 0, 0.41]}>
       <group ref={spin}>
+        <lineSegments geometry={gratGeo} material={gratMat} frustumCulled={false} />
         <points geometry={pointsGeo} material={pointsMat} frustumCulled={false} />
         <lineSegments geometry={arcGeo} material={arcMat} frustumCulled={false} />
       </group>
