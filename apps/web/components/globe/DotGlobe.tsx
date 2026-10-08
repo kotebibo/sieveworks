@@ -17,7 +17,7 @@ const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 // brand colours, linear-ish rgb in 0..1
 const LAND = new THREE.Color(0x2f79ce); // --accent
-const OCEAN = new THREE.Color(0x9fb8d6); // faint blue-grey body
+const OCEAN = new THREE.Color(0x7c9ec9); // blue-grey body
 const MARKER = new THREE.Color(0x1e9e5c); // --verified
 
 // contributor cities [lat, lon]
@@ -94,8 +94,8 @@ const FRAG = /* glsl */ `
     if (r > 0.5) discard;
     float edge = smoothstep(0.5, 0.34, r);
     vec3 c = vType == 2.0 ? uMarker : (vType == 1.0 ? uLand : uOcean);
-    float base = vType == 2.0 ? 1.0 : (vType == 1.0 ? 0.95 : 0.5);
-    float a = base * edge * mix(0.1, 1.0, vFront);
+    float base = vType == 2.0 ? 1.0 : (vType == 1.0 ? 1.0 : 0.62);
+    float a = base * edge * mix(0.18, 1.0, vFront);
     gl_FragColor = vec4(c, a);
   }
 `;
@@ -154,7 +154,7 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
           uTime: { value: 0 },
           uDpr: { value: typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1 },
           uScale: { value: 800 },
-          uSize: { value: 0.0032 },
+          uSize: { value: 0.0052 },
           uLand: { value: LAND },
           uOcean: { value: OCEAN },
           uMarker: { value: MARKER },
