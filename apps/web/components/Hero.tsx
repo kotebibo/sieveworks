@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { Magnetic } from "@/components/Magnetic";
 import { BackgroundGlobe } from "@/components/BackgroundGlobe";
+import { CountUp, fmt } from "@/components/ui";
+import type { GlobalStats } from "@/lib/api";
 
 /**
- * Homepage hero — the two sides of the marketplace, front and center, over a
- * subtle 3D globe backdrop. A non-technical visitor sees immediately that they
- * can bring a job or bring a computer. CSS-only .reveal entrance.
+ * Homepage hero — the two sides of the marketplace over a dotted-globe backdrop,
+ * made alive with real coordinator numbers: a live strip under the headline and
+ * a live count on each side. CSS-only .reveal entrance; live-pulse dots.
  */
 function JobIcon() {
   return (
@@ -29,7 +31,10 @@ function ComputerIcon() {
   );
 }
 
-export function Hero() {
+const panel =
+  "panel p-6 sm:p-7 transition-transform duration-300 ease-out hover:-translate-y-1";
+
+export function Hero({ stats }: { stats: GlobalStats | null }) {
   return (
     <section className="relative overflow-hidden min-h-screen flex items-center">
       {/* 3D dotted-globe backdrop, sized to the full-height hero */}
@@ -38,15 +43,29 @@ export function Hero() {
       </div>
 
       <div className="relative z-10 w-full mx-auto max-w-[1120px] px-5 sm:px-7 py-20">
-        <h1 className="reveal font-display font-extrabold leading-[1.04] tracking-[-0.03em] text-[clamp(32px,5vw,56px)] max-w-[15ch]">
-          Two ways into one network.
+        <h1 className="reveal font-display font-extrabold leading-[1.02] tracking-[-0.03em] text-[clamp(36px,5.6vw,62px)] max-w-[15ch]">
+          Two ways into <span className="text-[var(--accent)]">one network.</span>
         </h1>
         <p className="reveal mt-5 text-[17px] sm:text-[18px] leading-[1.5] text-[var(--text-dim)] max-w-[52ch]" style={{ animationDelay: "90ms" }}>
           A crowd of everyday computers runs huge jobs, and every result is proven real. Bring a job, or bring a computer.
         </p>
 
-        <div className="reveal mt-10 grid gap-5 md:grid-cols-2 max-w-[880px]" style={{ animationDelay: "160ms" }}>
-          <div className="panel p-6 sm:p-7">
+        {/* live proof strip — real coordinator numbers, animated */}
+        <div className="reveal mt-6 flex items-center gap-x-5 gap-y-2 flex-wrap text-[14px]" style={{ animationDelay: "130ms" }}>
+          <span className="inline-flex items-center gap-2 font-medium">
+            <span className="w-2 h-2 rounded-full live-pulse" style={{ background: "var(--verified)" }} />
+            Live on Solana
+          </span>
+          <span className="text-[var(--border-bright)]">·</span>
+          <span className="num text-[var(--text-dim)]">
+            <b className="text-[var(--text)] font-semibold">{stats ? <CountUp value={stats.chunks_accepted} format={fmt} /> : "—"}</b> chunks verified
+          </span>
+          <span className="text-[var(--border-bright)]">·</span>
+          <span className="num text-[var(--accent)] font-semibold">~1% to re-check</span>
+        </div>
+
+        <div className="reveal mt-10 grid gap-5 md:grid-cols-2 max-w-[880px]" style={{ animationDelay: "180ms" }}>
+          <div className={panel}>
             <div className="flex items-center gap-3.5">
               <JobIcon />
               <div>
@@ -57,12 +76,18 @@ export function Hero() {
             <p className="mt-3.5 text-[14.5px] leading-[1.55] text-[var(--text-dim)]">
               Set a budget, a crowd runs it, and you pay only for work that passes verification. No datacenter, no trust required.
             </p>
-            <Magnetic>
-              <Link href="/bounties/new" data-cursor className="sheen mt-4 inline-block font-medium text-[14px] px-5 py-2.5 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Post a job</Link>
-            </Magnetic>
+            <div className="mt-4 flex items-center gap-3 flex-wrap">
+              <Magnetic>
+                <Link href="/bounties/new" data-cursor className="sheen inline-block font-medium text-[14px] px-5 py-2.5 text-[var(--bg)]" style={{ background: "var(--accent)" }}>Post a job</Link>
+              </Magnetic>
+              <span className="num text-[12.5px] text-[var(--text-faint)] inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent)" }} />
+                <b className="text-[var(--text-dim)] font-semibold">{stats ? <CountUp value={stats.open_jobs} format={fmt} /> : "—"}</b> open now
+              </span>
+            </div>
           </div>
 
-          <div className="panel p-6 sm:p-7">
+          <div className={panel}>
             <div className="flex items-center gap-3.5">
               <ComputerIcon />
               <div>
@@ -73,9 +98,15 @@ export function Hero() {
             <p className="mt-3.5 text-[14.5px] leading-[1.55] text-[var(--text-dim)]">
               Open a tab and it starts earning. Your machine runs real paid work in the background, paid per verified piece. No install, no signup.
             </p>
-            <Magnetic>
-              <Link href="/contribute" data-cursor className="mt-4 inline-block font-medium text-[14px] px-5 py-2.5 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">Earn with your computer</Link>
-            </Magnetic>
+            <div className="mt-4 flex items-center gap-3 flex-wrap">
+              <Magnetic>
+                <Link href="/contribute" data-cursor className="inline-block font-medium text-[14px] px-5 py-2.5 border border-[var(--border-bright)] text-[var(--text)] hover:border-[var(--text)] transition-colors">Earn with your computer</Link>
+              </Magnetic>
+              <span className="num text-[12.5px] text-[var(--text-faint)] inline-flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full live-pulse" style={{ background: "var(--verified)" }} />
+                <b className="text-[var(--text-dim)] font-semibold">{stats ? <CountUp value={stats.contributors} format={fmt} /> : "—"}</b> earning now
+              </span>
+            </div>
           </div>
         </div>
       </div>

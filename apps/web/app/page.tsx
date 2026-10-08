@@ -55,7 +55,7 @@ export default function Home() {
   return (
     <>
       {/* ============ 1 · hero — plain statement + the 3-step mechanism ============ */}
-      <Hero />
+      <Hero stats={stats} />
 
       {/* ============ 2 · what's a search job ============ */}
       <SearchJob />
