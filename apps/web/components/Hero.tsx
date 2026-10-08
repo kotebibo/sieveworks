@@ -33,7 +33,7 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden min-h-screen flex items-center">
       {/* 3D dotted-globe backdrop, sized to the full-height hero */}
-      <div className="pointer-events-none absolute top-1/2 right-[-10%] -translate-y-1/2 h-[92vh] max-h-[840px] aspect-square opacity-95 hidden md:block" aria-hidden>
+      <div className="pointer-events-none absolute top-1/2 right-[-14%] -translate-y-1/2 h-[122vh] max-h-[1040px] aspect-square opacity-100 hidden md:block" aria-hidden>
         <BackgroundGlobe />
       </div>
 

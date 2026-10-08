@@ -17,7 +17,7 @@ import { isLand, MASK_W, MASK_H } from "./landmask";
 const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 const LAND = new THREE.Color(0x2f79ce); // --accent
-const OCEAN = new THREE.Color(0x90aacb); // faint body dots
+const OCEAN = new THREE.Color(0x7f9cc2); // body dots
 const MARKER = new THREE.Color(0x1e9e5c); // --verified
 const ARC = new THREE.Color(0x5b8fd6); // resting arc
 const PULSE = new THREE.Color(0x2f79ce); // travelling highlight
@@ -86,7 +86,7 @@ const POINT_VERT = /* glsl */ `
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vec3 n = normalize(mat3(modelViewMatrix) * normalize(position));
     vFront = smoothstep(-0.2, 0.55, n.z);
-    float typeSize = aType == 2.0 ? 2.3 : (aType == 1.0 ? 1.4 : 0.78);
+    float typeSize = aType == 2.0 ? 2.4 : (aType == 1.0 ? 1.55 : 0.92);
     float pulse = aType == 2.0 ? (0.82 + 0.28 * sin(uTime * 2.1 + aSeed * 6.2831)) : 1.0;
     float perspective = uScale / max(-mv.z, 0.1);
     gl_PointSize = uSize * typeSize * pulse * uDpr * perspective * (0.58 + 0.42 * vFront);
@@ -105,8 +105,8 @@ const POINT_FRAG = /* glsl */ `
     if (length(d) > 0.5) discard;
     float edge = smoothstep(0.5, 0.34, length(d));
     vec3 c = vType == 2.0 ? uMarker : (vType == 1.0 ? uLand : uOcean);
-    float base = vType == 2.0 ? 1.0 : (vType == 1.0 ? 1.0 : 0.42);
-    float a = base * edge * mix(0.16, 1.0, vFront);
+    float base = vType == 2.0 ? 1.0 : (vType == 1.0 ? 1.0 : 0.58);
+    float a = base * edge * mix(0.24, 1.0, vFront);
     gl_FragColor = vec4(c, a);
   }
 `;
@@ -190,7 +190,7 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
         uTime: { value: 0 },
         uDpr: { value: typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1 },
         uScale: { value: 800 },
-        uSize: { value: 0.0052 },
+        uSize: { value: 0.0066 },
         uLand: { value: LAND },
         uOcean: { value: OCEAN },
         uMarker: { value: MARKER },
