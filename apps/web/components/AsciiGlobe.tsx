@@ -12,8 +12,8 @@ import { isLand, MASK_W, MASK_H } from "./globe/landmask";
  * Decorative only (aria-hidden).
  */
 
-const W = 180;
-const H = 90;
+const W = 240;
+const H = 120;
 const LH = 1.2; // line-height that renders the W×H grid ~square
 const RAMP = " .,:;-~=+*oc#%&@";
 const RN = RAMP.length - 1;
@@ -115,9 +115,9 @@ export function AsciiGlobe() {
           const lon = Math.atan2(tz, tx) * 180 / Math.PI;
           let b = nx * Lx + -ny * Ly + nz * Lz; b = Math.max(0, Math.min(1, b));
           if (isLand(lat, lon)) {
-            lo += RAMP[Math.min(RN, Math.floor((0.5 + 0.5 * b) * RN))]; oc += " ";
+            lo += RAMP[Math.min(RN, Math.floor((0.68 + 0.32 * b) * RN))]; oc += " ";
           } else {
-            oc += RAMP[Math.min(RN, Math.floor((0.42 + 0.45 * b) * RN))]; lo += " ";
+            oc += RAMP[Math.min(RN, Math.floor((0.55 + 0.4 * b) * RN))]; lo += " ";
           }
         }
         lo += "\n"; oc += "\n";

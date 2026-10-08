@@ -151,9 +151,9 @@ body {
 /* ASCII globe backdrop: green continents + blue oceans, amber contributor pings */
 .ascii-globe { position: relative; width: 100%; font-family: "Spline Sans Mono", ui-monospace, monospace; }
 .ascii-base { margin: 0; white-space: pre; user-select: none; }
-.ascii-ocean { position: relative; color: #2F79CE; opacity: 0.85; }
-.ascii-land { position: absolute; top: 0; left: 0; color: var(--verified); opacity: 0.92; }
-.ascii-lines { position: absolute; top: 0; left: 0; color: #F2A33C; opacity: 0.55; }
+.ascii-ocean { position: relative; color: #2F79CE; opacity: 0.95; }
+.ascii-land { position: absolute; top: 0; left: 0; color: var(--verified); opacity: 1; }
+.ascii-lines { position: absolute; top: 0; left: 0; color: #E07B10; opacity: 0.75; }
 .ascii-marker { position: absolute; left: 0; top: 0; transform: translate(-0.12ch, -0.04em); color: #F2A33C; text-shadow: 0 0 8px #F2A33C; animation: ascii-flash 1.7s ease-in-out infinite; pointer-events: none; }
 @keyframes ascii-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { .ascii-marker { animation: none; } }
