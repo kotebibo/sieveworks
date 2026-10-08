@@ -6,6 +6,9 @@ export const alt = "Sieveworks — pay strangers to compute, and prove they did"
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+// The Sieveworks mark (meridian globe + verified core), rendered deterministically.
+const MARK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="62" height="62"><g fill="none" stroke="#8EA0BC" stroke-width="2.2"><circle cx="24" cy="24" r="18"/><ellipse cx="24" cy="24" rx="7.6" ry="18"/><line x1="6" y1="24" x2="42" y2="24" stroke-linecap="round"/><path d="M9.6 14.6 Q24 20.4 38.4 14.6" stroke-linecap="round"/><path d="M9.6 33.4 Q24 27.6 38.4 33.4" stroke-linecap="round"/></g><g stroke="#8EA0BC" stroke-width="1.8" opacity="0.75" stroke-linecap="round"><line x1="24" y1="24" x2="35.6" y2="10.2"/><line x1="24" y1="24" x2="33" y2="39.6"/><line x1="24" y1="24" x2="6" y2="24"/></g><circle cx="35.6" cy="10.2" r="2.9" fill="#1E9E5C"/><circle cx="33" cy="39.6" r="2.6" fill="#FFFFFF" stroke="#8EA0BC" stroke-width="2"/><circle cx="6" cy="24" r="2.6" fill="#FFFFFF" stroke="#8EA0BC" stroke-width="2"/><circle cx="24" cy="24" r="6.8" fill="#2F79CE"/><path d="M20.4 24 l2.5 2.5 l4.85 -5.4" fill="none" stroke="#FFFFFF" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 export default function OpengraphImage() {
   return new ImageResponse(
     (
@@ -22,7 +25,7 @@ export default function OpengraphImage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 12, background: "#2F79CE", display: "flex" }} />
+          <img width={62} height={62} src={`data:image/svg+xml;base64,${Buffer.from(MARK_SVG).toString("base64")}`} style={{ display: "flex" }} />
           <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: 8, color: "#1E2430", display: "flex" }}>SIEVEWORKS</div>
         </div>
 
