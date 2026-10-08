@@ -31,7 +31,7 @@ export default function GlobeScene() {
       style={{ width: "100%", height: "100%" }}
       frameloop={!visible || reduced ? "demand" : "always"}
       dpr={[1, 2]}
-      camera={{ fov: 42, position: [0, 0, 2.75], near: 0.1, far: 10 }}
+      camera={{ fov: 42, position: [0, 0, 3.8], near: 0.1, far: 10 }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
       onCreated={({ gl }) => {
         gl.setClearAlpha(0);

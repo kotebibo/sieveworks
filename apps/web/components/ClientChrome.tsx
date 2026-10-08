@@ -2,12 +2,11 @@
 
 import { useEffect } from "react";
 import Lenis from "lenis";
-import { CustomCursor } from "@/components/CustomCursor";
 import { IntroReveal } from "@/components/IntroReveal";
 
 /**
- * Global client-only chrome: momentum smooth-scroll (Lenis) + custom cursor +
- * first-load intro. Lenis drives the real scroll position, so the
+ * Global client-only chrome: momentum smooth-scroll (Lenis) + first-load intro.
+ * Lenis drives the real scroll position, so the
  * IntersectionObserver reveals and anchor links all keep working; it's skipped
  * under prefers-reduced-motion so nothing hijacks assistive scrolling.
  */
@@ -28,10 +27,5 @@ export function ClientChrome() {
     return () => { cancelAnimationFrame(raf); document.removeEventListener("click", onClick); lenis.destroy(); };
   }, []);
 
-  return (
-    <>
-      <CustomCursor />
-      <IntroReveal />
-    </>
-  );
+  return <IntroReveal />;
 }
