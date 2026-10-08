@@ -148,11 +148,13 @@ body {
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .live-pulse { animation: live-pulse 2s ease-in-out infinite; }
 
-/* ASCII globe backdrop */
+/* ASCII globe backdrop: green continents + blue oceans, amber contributor pings */
 .ascii-globe { position: relative; width: 100%; font-family: "Spline Sans Mono", ui-monospace, monospace; }
-.ascii-base { margin: 0; white-space: pre; color: #8296b6; opacity: 0.9; user-select: none; }
-.ascii-marker { position: absolute; left: 0; top: 0; transform: translate(-0.12ch, -0.04em); text-shadow: 0 0 7px currentColor; animation: ascii-flash 1.7s ease-in-out infinite; pointer-events: none; }
-@keyframes ascii-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.ascii-base { margin: 0; white-space: pre; user-select: none; }
+.ascii-ocean { position: relative; color: #3C82CF; opacity: 0.5; }
+.ascii-land { position: absolute; top: 0; left: 0; color: var(--verified); opacity: 0.92; }
+.ascii-marker { position: absolute; left: 0; top: 0; transform: translate(-0.12ch, -0.04em); color: #F2A33C; text-shadow: 0 0 8px #F2A33C; animation: ascii-flash 1.7s ease-in-out infinite; pointer-events: none; }
+@keyframes ascii-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { .ascii-marker { animation: none; } }
 
 /* ============================================================
