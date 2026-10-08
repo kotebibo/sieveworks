@@ -33,7 +33,11 @@ export default function GlobeScene() {
       dpr={[1, 2]}
       camera={{ fov: 42, position: [0, 0, 2.75], near: 0.1, far: 10 }}
       gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }}
-      onCreated={({ gl }) => gl.setClearAlpha(0)}
+      onCreated={({ gl }) => {
+        gl.setClearAlpha(0);
+        // let the browser auto-restore the context instead of leaving it dead
+        gl.domElement.addEventListener("webglcontextlost", (e) => e.preventDefault(), false);
+      }}
     >
       <DotGlobe reduced={reduced} />
     </Canvas>

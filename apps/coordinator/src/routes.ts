@@ -48,9 +48,9 @@ interface Deps {
 export function registerRoutes(app: FastifyInstance, deps: Deps): void {
   // ---- auth: Sign-In With Solana -----------------------------------------
   app.post("/v1/auth/nonce", async (req, reply) => {
-    const { wallet } = (req.body ?? {}) as { wallet?: string };
+    const { wallet, domain } = (req.body ?? {}) as { wallet?: string; domain?: string };
     if (!wallet) return reply.code(400).send({ error: "wallet required" });
-    const challenge = await issueNonce(wallet);
+    const challenge = await issueNonce(wallet, domain);
     if (!challenge) return reply.code(400).send({ error: "invalid wallet" });
     return challenge; // { nonce, message } — client signs `message`
   });

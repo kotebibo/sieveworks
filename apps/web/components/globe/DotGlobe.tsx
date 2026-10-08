@@ -207,7 +207,7 @@ export default function DotGlobe({ reduced }: { reduced: boolean }) {
       const b = lonLatToVec(...CITIES[to], 1).normalize();
       const omega = Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1));
       const sinO = Math.sin(omega) || 1e-5;
-      const lift = 0.12 + omega * 0.22; // longer hops bow out further
+      const lift = 0.04 + omega * 0.1; // longer hops bow out a little further
       const phase = li / LINKS.length;
       const pts: THREE.Vector3[] = [];
       for (let k = 0; k <= SEG; k++) {

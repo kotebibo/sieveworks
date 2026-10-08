@@ -184,8 +184,10 @@ export async function uploadSpec(form: FormData, token: string): Promise<UploadR
 
 // ---- auth (Sign-In With Solana) ----
 export async function authNonce(wallet: string): Promise<{ nonce: string; message: string }> {
+  // SIWS: the signed message must name this page's origin, or the wallet refuses it.
+  const domain = typeof window !== "undefined" ? window.location.host : undefined;
   const res = await fetch(`${COORDINATOR_URL}/v1/auth/nonce`, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet }),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet, domain }),
   });
   if (!res.ok) throw new Error("nonce request failed");
   return (await res.json()) as { nonce: string; message: string };

@@ -16,11 +16,29 @@ const NONCE_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_S = 24 * 60 * 60;
 const base58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
+/** Sign-In With Solana requires the first line to name the requesting *origin*
+ * (host[:port]), and the wallet refuses to sign unless it matches the page's
+ * own origin. The client sends its host; we allow only our own origins and fall
+ * back to the canonical one, so a caller can never inject an arbitrary domain
+ * into the signed message. */
+export function safeDomain(domain?: string): string {
+  if (
+    domain &&
+    domain.length <= 100 &&
+    (/^localhost(:\d+)?$/.test(domain) ||
+      /^(?:[a-z0-9-]+\.)*sievework\.com$/.test(domain) ||
+      /^[a-z0-9-]+\.vercel\.app$/.test(domain))
+  ) {
+    return domain;
+  }
+  return "www.sievework.com";
+}
+
 /** The exact human-readable message the wallet signs. Domain + nonce + time
  * bind it against phishing and replay. */
-export function signInMessage(wallet: string, nonce: string, issuedAt: string): string {
+export function signInMessage(domain: string, wallet: string, nonce: string, issuedAt: string): string {
   return [
-    "Sieveworks wants you to sign in with your Solana account:",
+    `${domain} wants you to sign in with your Solana account:`,
     wallet,
     "",
     "Sign in to Sieveworks. This request will not trigger a transaction or cost any fees.",
@@ -30,11 +48,11 @@ export function signInMessage(wallet: string, nonce: string, issuedAt: string): 
   ].join("\n");
 }
 
-export async function issueNonce(wallet: string): Promise<{ nonce: string; message: string } | null> {
+export async function issueNonce(wallet: string, domain?: string): Promise<{ nonce: string; message: string } | null> {
   if (!base58.test(wallet)) return null;
   const nonce = randomBytes(16).toString("hex");
   const issuedAt = new Date().toISOString();
-  const message = signInMessage(wallet, nonce, issuedAt);
+  const message = signInMessage(safeDomain(domain), wallet, nonce, issuedAt);
   const expires = new Date(Date.now() + NONCE_TTL_MS).toISOString();
   await sql`
     insert into auth_nonces (wallet, nonce, expires_at) values (${wallet}, ${nonce}, ${expires})
