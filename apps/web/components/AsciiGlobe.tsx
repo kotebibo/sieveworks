@@ -74,7 +74,7 @@ export function AsciiGlobe() {
             lo += RAMP[Math.min(RN, Math.floor((0.5 + 0.5 * b) * RN))];
             oc += " ";
           } else {
-            oc += RAMP[Math.min(RN, Math.floor((0.22 + 0.42 * b) * RN))];
+            oc += RAMP[Math.min(RN, Math.floor((0.42 + 0.45 * b) * RN))];
             lo += " ";
           }
         }
