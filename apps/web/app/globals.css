@@ -10,30 +10,9 @@
    Existing semantic var names are preserved so every page adopts the
    direction with no per-page changes.
    ============================================================ */
-:root, .light {
-  color-scheme: light;
-  --bg: #F5F7FA;
-  --panel: #FFFFFF;      /* surface */
-  --panel-2: #ECF0F6;    /* elevated / wells */
-  --border: #E2E7EF;
-  --border-bright: #C9D3E0;
-  --text: #1E2430;
-  --text-dim: #3D4557;    /* secondary/body — deep ink-slate, not washed grey */
-  --text-faint: #66708A;  /* AA on bg and panel */
-  --accent: #2F79CE;     /* sky — interactive voice (AA on white) */
-  --accent-2: #7FB0E8;
-  --accent-dim: #245FA3;
-  --accent-ghost: #E3EEFB;
-  --amber: #C77414;      /* renders & energy (AA-adjacent on white for text) */
-  --verified: #1E9E5C;
-  --rejected: #D6452E;
-  --cell-empty: #E5EAF2;
-  --mesh: transparent;   /* the terminal grid retired in daylight */
-  --grid: transparent;
-  --shadow-soft: 0 4px 18px rgba(30, 36, 48, 0.07);
-  --shadow-pop: 0 6px 20px rgba(47, 121, 206, 0.28);
-}
-.dark {
+/* Navy-night only. Light mode ("Daylight Arcade") was retired 2026-10-09 — the
+   whole app runs on the dark navy variant, so these tokens live on :root. */
+:root {
   color-scheme: dark;
   --bg: #141A25;
   --panel: #1C2432;      /* navy night, not terminal black */
@@ -151,9 +130,9 @@ body {
 /* ASCII globe backdrop: green continents + blue oceans, amber contributor pings */
 .ascii-globe { position: relative; width: 100%; font-family: "Spline Sans Mono", ui-monospace, monospace; }
 .ascii-base { margin: 0; white-space: pre; user-select: none; }
-.ascii-ocean { position: relative; color: #2F79CE; opacity: 0.95; }
+.ascii-ocean { position: relative; color: var(--accent); opacity: 0.9; }
 .ascii-land { position: absolute; top: 0; left: 0; color: var(--verified); opacity: 1; }
-.ascii-lines { position: absolute; top: 0; left: 0; color: #E07B10; opacity: 0.75; }
+.ascii-lines { position: absolute; top: 0; left: 0; color: var(--amber); opacity: 0.8; }
 .ascii-marker { position: absolute; left: 0; top: 0; transform: translate(-0.12ch, -0.04em); color: #F2A33C; text-shadow: 0 0 8px #F2A33C; animation: ascii-flash 1.7s ease-in-out infinite; pointer-events: none; }
 @keyframes ascii-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { .ascii-marker { animation: none; } }
@@ -193,7 +172,7 @@ body {
   0% { background-position: 140% 0; }
   55%, 100% { background-position: -60% 0; }
 }
-.dark .sieve-sweep::before { mix-blend-mode: screen; opacity: 0.9; }
+.sieve-sweep::before { mix-blend-mode: screen; opacity: 0.9; }
 
 
 /* Nav underline draws in from the left on hover. */

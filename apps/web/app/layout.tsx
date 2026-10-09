@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import { Inter, Nunito, Spline_Sans_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
-import { ThemeProvider, themeInitScript } from "@/lib/theme";
 import { WalletContext } from "@/lib/wallet";
 import { AuthProvider } from "@/lib/auth";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { AuthButton } from "@/components/AuthButton";
 import { Wordmark } from "@/components/Wordmark";
 import { NavLinks } from "@/components/NavLinks";
@@ -28,14 +26,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
+    <html lang="en" className="dark">
       <body className={`${sans.variable} ${display.variable} ${mono.variable} min-h-screen antialiased`}>
-        <ThemeProvider>
-          <WalletContext>
-            <AuthProvider>
+        <WalletContext>
+          <AuthProvider>
             <ClientChrome />
             <header className="border-b border-[var(--border)] sticky top-0 z-20 backdrop-blur-md"
               style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)" }}>
@@ -46,19 +40,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </Link>
                 <nav className="hidden sm:flex gap-[22px] ml-auto items-center text-[13.5px] font-medium">
                   <NavLinks />
-                  <ThemeToggle />
                   <AuthButton />
                 </nav>
                 <div className="ml-auto sm:hidden flex items-center gap-2">
-                  <ThemeToggle />
                   <AuthButton />
                 </div>
               </div>
             </header>
             <main>{children}</main>
-            </AuthProvider>
-          </WalletContext>
-        </ThemeProvider>
+          </AuthProvider>
+        </WalletContext>
       </body>
     </html>
   );
